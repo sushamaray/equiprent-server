@@ -12,6 +12,7 @@ import {
   createBooking,
   getMyBookings,
   getOwnerBookings,
+  confirmBooking,
   cancelBooking,
 } from "../controllers/booking.controller.js";
 
@@ -39,6 +40,14 @@ router.get(
   verifyToken,
   verifyOwner,
   getOwnerBookings
+);
+
+// Owner confirms a pending booking for their equipment
+router.patch(
+  "/:id/confirm",
+  verifyToken,
+  verifyOwner,
+  confirmBooking
 );
 
 // Customer cancels their own pending, unpaid booking

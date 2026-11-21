@@ -395,10 +395,9 @@ export const getMyBookings = async (req, res) => {
   }
 };
 
-// NEW: Get bookings for authenticated Owner's equipment
+// Get bookings for authenticated Owner's equipment
 export const getOwnerBookings = async (req, res) => {
   try {
-    // Only Owners may access this endpoint
     if (
       req.auth?.role !== "owner" ||
       !ObjectId.isValid(req.auth?.userId)
@@ -415,8 +414,7 @@ export const getOwnerBookings = async (req, res) => {
 
     const db = getDB();
 
-    // Filter by verified Owner ID from JWT + RBAC
-    // Never trust an ownerId from query parameters
+    // Never trust ownerId supplied in query parameters
     const filter = {
       ownerId: new ObjectId(
         req.auth.userId
@@ -464,6 +462,109 @@ export const getOwnerBookings = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to retrieve Owner bookings",
+    });
+  }
+};
+
+// Confirm pending booking - Owner only
+export const confirmBooking = async (req, res) => {
+  if (
+    req.auth?.role !== "owner" ||
+    !ObjectId.isValid(req.auth?.userId)
+  ) {
+    return res.status(403).json({
+      success: false,
+      message: "Only Owners can confirm bookings",
+    });
+  }
+
+  const { id } = req.params;
+
+  if (
+    typeof id !== "string" ||
+    !/^[a-fA-F0-9]{24}$/.test(id)
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid booking ID",
+    });
+  }
+
+  try {
+    const db = getDB();
+    const bookingId = new ObjectId(id);
+    const ownerId = new ObjectId(
+      req.auth.userId
+    );
+
+    // Atomic conditional update:
+    // Only this Owner's pending booking can be confirmed.
+    const now = new Date();
+
+    const result = await db
+      .collection("bookings")
+      .updateOne(
+        {
+          _id: bookingId,
+          ownerId,
+          status: "pending",
+        },
+        {
+          $set: {
+            status: "confirmed",
+            confirmedAt: now,
+            updatedAt: now,
+          },
+        }
+      );
+
+    if (result.modifiedCount === 1) {
+      return res.status(200).json({
+        success: true,
+        message: "Booking confirmed successfully",
+        booking: {
+          bookingId: bookingId.toHexString(),
+          status: "confirmed",
+        },
+      });
+    }
+
+    // Check only within the authenticated Owner's bookings.
+    const booking = await db
+      .collection("bookings")
+      .findOne(
+        {
+          _id: bookingId,
+          ownerId,
+        },
+        {
+          projection: {
+            status: 1,
+          },
+        }
+      );
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found or access denied",
+      });
+    }
+
+    return res.status(409).json({
+      success: false,
+      message:
+        "Only pending bookings can be confirmed",
+    });
+  } catch (error) {
+    console.error(
+      "Booking confirmation failed:",
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to confirm booking",
     });
   }
 };
