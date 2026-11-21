@@ -497,8 +497,6 @@ export const confirmBooking = async (req, res) => {
       req.auth.userId
     );
 
-    // Atomic conditional update:
-    // Only this Owner's pending booking can be confirmed.
     const now = new Date();
 
     const result = await db
@@ -529,7 +527,6 @@ export const confirmBooking = async (req, res) => {
       });
     }
 
-    // Check only within the authenticated Owner's bookings.
     const booking = await db
       .collection("bookings")
       .findOne(
@@ -565,6 +562,119 @@ export const confirmBooking = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to confirm booking",
+    });
+  }
+};
+
+// Reject pending, unpaid booking - Owner only
+export const rejectBooking = async (req, res) => {
+  if (
+    req.auth?.role !== "owner" ||
+    !ObjectId.isValid(req.auth?.userId)
+  ) {
+    return res.status(403).json({
+      success: false,
+      message: "Only Owners can reject bookings",
+    });
+  }
+
+  const { id } = req.params;
+
+  if (
+    typeof id !== "string" ||
+    !/^[a-fA-F0-9]{24}$/.test(id)
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid booking ID",
+    });
+  }
+
+  try {
+    const db = getDB();
+
+    const bookingId = new ObjectId(id);
+    const ownerId = new ObjectId(
+      req.auth.userId
+    );
+
+    const now = new Date();
+
+    // Atomic update prevents duplicate rejection and
+    // conflicting status changes on the same booking.
+    const result = await db
+      .collection("bookings")
+      .updateOne(
+        {
+          _id: bookingId,
+          ownerId,
+          status: "pending",
+          paymentStatus: "unpaid",
+        },
+        {
+          $set: {
+            status: "rejected",
+            rejectedAt: now,
+            updatedAt: now,
+          },
+        }
+      );
+
+    if (result.modifiedCount === 1) {
+      return res.status(200).json({
+        success: true,
+        message: "Booking rejected successfully",
+        booking: {
+          bookingId: bookingId.toHexString(),
+          status: "rejected",
+        },
+      });
+    }
+
+    // Check only bookings owned by authenticated Owner.
+    const booking = await db
+      .collection("bookings")
+      .findOne(
+        {
+          _id: bookingId,
+          ownerId,
+        },
+        {
+          projection: {
+            status: 1,
+            paymentStatus: 1,
+          },
+        }
+      );
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found or access denied",
+      });
+    }
+
+    if (booking.status !== "pending") {
+      return res.status(409).json({
+        success: false,
+        message: "Only pending bookings can be rejected",
+      });
+    }
+
+    return res.status(409).json({
+      success: false,
+      message:
+        "Paid bookings require a separate refund process",
+    });
+  } catch (error) {
+    console.error(
+      "Booking rejection failed:",
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to reject booking",
     });
   }
 };

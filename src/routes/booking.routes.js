@@ -13,6 +13,7 @@ import {
   getMyBookings,
   getOwnerBookings,
   confirmBooking,
+  rejectBooking,
   cancelBooking,
 } from "../controllers/booking.controller.js";
 
@@ -42,12 +43,20 @@ router.get(
   getOwnerBookings
 );
 
-// Owner confirms a pending booking for their equipment
+// Owner confirms a pending booking
 router.patch(
   "/:id/confirm",
   verifyToken,
   verifyOwner,
   confirmBooking
+);
+
+// Owner rejects a pending, unpaid booking
+router.patch(
+  "/:id/reject",
+  verifyToken,
+  verifyOwner,
+  rejectBooking
 );
 
 // Customer cancels their own pending, unpaid booking
