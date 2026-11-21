@@ -1,8 +1,81 @@
 
-const requiredTextFields = ["name", "description", "category", "location"];
+const requiredTextFields = [
+  "name",
+  "description",
+  "category",
+  "location",
+];
 
+const optionalTextFields = [
+  "brand",
+  "model",
+  "rentalTerms",
+];
+
+const allowedRentalTypes = [
+  "daily",
+  "weekly",
+  "monthly",
+];
+
+const allowedConditions = [
+  "new",
+  "excellent",
+  "good",
+  "fair",
+];
+
+const isValidRentalType = (value) => {
+  return (
+    typeof value === "string" &&
+    allowedRentalTypes.includes(value)
+  );
+};
+
+const isValidCondition = (value) => {
+  return (
+    typeof value === "string" &&
+    allowedConditions.includes(value)
+  );
+};
+
+const isValidImageURL = (value) => {
+  if (typeof value !== "string" || !value.trim()) {
+    return false;
+  }
+
+  try {
+    const imageURL = new URL(value.trim());
+
+    return ["http:", "https:"].includes(
+      imageURL.protocol
+    );
+  } catch {
+    return false;
+  }
+};
+
+const isValidQuantity = (value) => {
+  return (
+    Number.isInteger(value) &&
+    value >= 0
+  );
+};
+
+const isNonEmptyText = (value) => {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0
+  );
+};
+
+// Validate new equipment
 export const validateEquipment = (data) => {
-  if (!data || typeof data !== "object" || Array.isArray(data)) {
+  if (
+    !data ||
+    typeof data !== "object" ||
+    Array.isArray(data)
+  ) {
     return {
       valid: false,
       message: "Invalid equipment data",
@@ -10,10 +83,22 @@ export const validateEquipment = (data) => {
   }
 
   for (const field of requiredTextFields) {
-    if (typeof data[field] !== "string" || !data[field].trim()) {
+    if (!isNonEmptyText(data[field])) {
       return {
         valid: false,
         message: `${field} is required`,
+      };
+    }
+  }
+
+  for (const field of optionalTextFields) {
+    if (
+      data[field] !== undefined &&
+      !isNonEmptyText(data[field])
+    ) {
+      return {
+        valid: false,
+        message: `${field} must be a non-empty string`,
       };
     }
   }
@@ -29,20 +114,7 @@ export const validateEquipment = (data) => {
     };
   }
 
-  if (typeof data.image !== "string") {
-    return {
-      valid: false,
-      message: "A valid image URL is required",
-    };
-  }
-
-  try {
-    const imageURL = new URL(data.image);
-
-    if (!["http:", "https:"].includes(imageURL.protocol)) {
-      throw new Error("Unsupported image protocol");
-    }
-  } catch {
+  if (!isValidImageURL(data.image)) {
     return {
       valid: false,
       message: "A valid image URL is required",
@@ -59,25 +131,69 @@ export const validateEquipment = (data) => {
     };
   }
 
+  if (
+    data.rentalType !== undefined &&
+    !isValidRentalType(data.rentalType)
+  ) {
+    return {
+      valid: false,
+      message: "rentalType must be daily, weekly, or monthly",
+    };
+  }
+
+  if (
+    data.availableQuantity !== undefined &&
+    !isValidQuantity(data.availableQuantity)
+  ) {
+    return {
+      valid: false,
+      message: "availableQuantity must be a non-negative integer",
+    };
+  }
+
+  if (
+    data.condition !== undefined &&
+    !isValidCondition(data.condition)
+  ) {
+    return {
+      valid: false,
+      message: "condition must be new, excellent, good, or fair",
+    };
+  }
+
   return {
     valid: true,
     message: "Equipment data is valid",
   };
 };
 
-export const buildEquipmentDocument = (data, ownerId) => {
+// Build MongoDB equipment document
+export const buildEquipmentDocument = (
+  data,
+  ownerId
+) => {
   const now = new Date();
 
   return {
     name: data.name.trim(),
     description: data.description.trim(),
     category: data.category.trim(),
+
     pricePerDay: data.pricePerDay,
+    rentalType: data.rentalType ?? "daily",
+    availableQuantity:
+      data.availableQuantity ?? 1,
+
+    brand: data.brand?.trim() ?? "",
+    model: data.model?.trim() ?? "",
+    condition: data.condition ?? "good",
+    rentalTerms: data.rentalTerms?.trim() ?? "",
+
     location: data.location.trim(),
     image: data.image.trim(),
     availability: data.availability ?? true,
 
-    // New equipment must be approved by an Admin
+    // New equipment requires Admin approval
     status: "pending",
 
     ownerId,
@@ -86,18 +202,32 @@ export const buildEquipmentDocument = (data, ownerId) => {
   };
 };
 
+// Fields that equipment owners can update
 const editableEquipmentFields = [
   "name",
   "description",
   "category",
   "pricePerDay",
+  "rentalType",
+  "availableQuantity",
+  "brand",
+  "model",
+  "condition",
+  "rentalTerms",
   "location",
   "image",
   "availability",
 ];
 
-export const validateEquipmentUpdate = (data) => {
-  if (!data || typeof data !== "object" || Array.isArray(data)) {
+// Validate equipment updates
+export const validateEquipmentUpdate = (
+  data
+) => {
+  if (
+    !data ||
+    typeof data !== "object" ||
+    Array.isArray(data)
+  ) {
     return {
       valid: false,
       message: "Invalid equipment update data",
@@ -114,7 +244,11 @@ export const validateEquipmentUpdate = (data) => {
   }
 
   for (const field of fields) {
-    if (!editableEquipmentFields.includes(field)) {
+    if (
+      !editableEquipmentFields.includes(
+        field
+      )
+    ) {
       return {
         valid: false,
         message: `Field ${field} cannot be updated`,
@@ -125,7 +259,19 @@ export const validateEquipmentUpdate = (data) => {
   for (const field of requiredTextFields) {
     if (
       field in data &&
-      (typeof data[field] !== "string" || !data[field].trim())
+      !isNonEmptyText(data[field])
+    ) {
+      return {
+        valid: false,
+        message: `${field} must be a non-empty string`,
+      };
+    }
+  }
+
+  for (const field of optionalTextFields) {
+    if (
+      field in data &&
+      !isNonEmptyText(data[field])
     ) {
       return {
         valid: false,
@@ -136,9 +282,11 @@ export const validateEquipmentUpdate = (data) => {
 
   if (
     "pricePerDay" in data &&
-    (typeof data.pricePerDay !== "number" ||
+    (
+      typeof data.pricePerDay !== "number" ||
       !Number.isFinite(data.pricePerDay) ||
-      data.pricePerDay <= 0)
+      data.pricePerDay <= 0
+    )
   ) {
     return {
       valid: false,
@@ -146,26 +294,14 @@ export const validateEquipmentUpdate = (data) => {
     };
   }
 
-  if ("image" in data) {
-    if (typeof data.image !== "string") {
-      return {
-        valid: false,
-        message: "A valid image URL is required",
-      };
-    }
-
-    try {
-      const imageURL = new URL(data.image);
-
-      if (!["http:", "https:"].includes(imageURL.protocol)) {
-        throw new Error("Unsupported image protocol");
-      }
-    } catch {
-      return {
-        valid: false,
-        message: "A valid image URL is required",
-      };
-    }
+  if (
+    "image" in data &&
+    !isValidImageURL(data.image)
+  ) {
+    return {
+      valid: false,
+      message: "A valid image URL is required",
+    };
   }
 
   if (
@@ -178,17 +314,55 @@ export const validateEquipmentUpdate = (data) => {
     };
   }
 
+  if (
+    "rentalType" in data &&
+    !isValidRentalType(data.rentalType)
+  ) {
+    return {
+      valid: false,
+      message: "rentalType must be daily, weekly, or monthly",
+    };
+  }
+
+  if (
+    "availableQuantity" in data &&
+    !isValidQuantity(data.availableQuantity)
+  ) {
+    return {
+      valid: false,
+      message: "availableQuantity must be a non-negative integer",
+    };
+  }
+
+  if (
+    "condition" in data &&
+    !isValidCondition(data.condition)
+  ) {
+    return {
+      valid: false,
+      message: "condition must be new, excellent, good, or fair",
+    };
+  }
+
   return {
     valid: true,
     message: "Equipment update data is valid",
   };
 };
 
-export const buildEquipmentUpdate = (data) => {
+// Build safe MongoDB update object
+export const buildEquipmentUpdate = (
+  data
+) => {
   const update = {};
 
   for (const field of editableEquipmentFields) {
-    if (Object.prototype.hasOwnProperty.call(data, field)) {
+    if (
+      Object.prototype.hasOwnProperty.call(
+        data,
+        field
+      )
+    ) {
       update[field] =
         typeof data[field] === "string"
           ? data[field].trim()

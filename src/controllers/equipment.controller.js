@@ -1,3 +1,4 @@
+
 import { ObjectId } from "mongodb";
 import { getDB } from "../config/db.js";
 
@@ -8,9 +9,27 @@ import {
   buildEquipmentUpdate,
 } from "../models/equipment.model.js";
 
+// Fields visible through public equipment APIs
+const publicEquipmentProjection = {
+  name: 1,
+  description: 1,
+  category: 1,
+  pricePerDay: 1,
+  rentalType: 1,
+  availableQuantity: 1,
+  brand: 1,
+  model: 1,
+  condition: 1,
+  rentalTerms: 1,
+  location: 1,
+  image: 1,
+  availability: 1,
+  createdAt: 1,
+};
+
+// Create equipment - Owner only
 export const createEquipment = async (req, res) => {
   try {
-    // Validate incoming equipment data
     const validation = validateEquipment(req.body);
 
     if (!validation.valid) {
@@ -20,8 +39,10 @@ export const createEquipment = async (req, res) => {
       });
     }
 
-    // Only verified Owners can create equipment
-    if (req.auth?.role !== "owner" || !ObjectId.isValid(req.auth?.userId)) {
+    if (
+      req.auth?.role !== "owner" ||
+      !ObjectId.isValid(req.auth?.userId)
+    ) {
       return res.status(403).json({
         success: false,
         message: "Only authenticated Owners can add equipment",
@@ -30,12 +51,16 @@ export const createEquipment = async (req, res) => {
 
     const ownerId = new ObjectId(req.auth.userId);
 
-    // Build equipment document using verified Owner ID
-    const equipment = buildEquipmentDocument(req.body, ownerId);
+    const equipment = buildEquipmentDocument(
+      req.body,
+      ownerId
+    );
 
     const db = getDB();
 
-    const result = await db.collection("equipment").insertOne(equipment);
+    const result = await db
+      .collection("equipment")
+      .insertOne(equipment);
 
     return res.status(201).json({
       success: true,
@@ -46,7 +71,10 @@ export const createEquipment = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Equipment creation failed:", error.message);
+    console.error(
+      "Equipment creation failed:",
+      error.message
+    );
 
     return res.status(500).json({
       success: false,
@@ -55,13 +83,11 @@ export const createEquipment = async (req, res) => {
   }
 };
 
+// Public equipment listing - Approved only
 export const getAllEquipment = async (req, res) => {
   try {
-    const rawPage = req.query.page ?? "1";
-    const rawLimit = req.query.limit ?? "10";
-
-    const page = Number(rawPage);
-    const limit = Number(rawLimit);
+    const page = Number(req.query.page ?? "1");
+    const limit = Number(req.query.limit ?? "10");
 
     if (
       !Number.isInteger(page) ||
@@ -84,21 +110,14 @@ export const getAllEquipment = async (req, res) => {
       deletedAt: { $exists: false },
     };
 
-    const total = await db.collection("equipment").countDocuments(filter);
+    const total = await db
+      .collection("equipment")
+      .countDocuments(filter);
 
     const equipment = await db
       .collection("equipment")
       .find(filter)
-      .project({
-        name: 1,
-        description: 1,
-        category: 1,
-        pricePerDay: 1,
-        location: 1,
-        image: 1,
-        availability: 1,
-        createdAt: 1,
-      })
+      .project(publicEquipmentProjection)
       .sort({
         createdAt: -1,
         _id: -1,
@@ -118,7 +137,10 @@ export const getAllEquipment = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Equipment listing failed:", error.message);
+    console.error(
+      "Equipment listing failed:",
+      error.message
+    );
 
     return res.status(500).json({
       success: false,
@@ -127,11 +149,11 @@ export const getAllEquipment = async (req, res) => {
   }
 };
 
+// Public equipment details - Approved only
 export const getEquipmentById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate MongoDB ObjectId format
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -141,26 +163,19 @@ export const getEquipmentById = async (req, res) => {
 
     const db = getDB();
 
-    const equipment = await db.collection("equipment").findOne(
-      {
-        _id: new ObjectId(id),
-        availability: true,
-        status: "approved",
-        deletedAt: { $exists: false },
-      },
-      {
-        projection: {
-          name: 1,
-          description: 1,
-          category: 1,
-          pricePerDay: 1,
-          location: 1,
-          image: 1,
-          availability: 1,
-          createdAt: 1,
+    const equipment = await db
+      .collection("equipment")
+      .findOne(
+        {
+          _id: new ObjectId(id),
+          availability: true,
+          status: "approved",
+          deletedAt: { $exists: false },
         },
-      },
-    );
+        {
+          projection: publicEquipmentProjection,
+        }
+      );
 
     if (!equipment) {
       return res.status(404).json({
@@ -174,7 +189,10 @@ export const getEquipmentById = async (req, res) => {
       equipment,
     });
   } catch (error) {
-    console.error("Equipment details failed:", error.message);
+    console.error(
+      "Equipment details failed:",
+      error.message
+    );
 
     return res.status(500).json({
       success: false,
@@ -183,11 +201,11 @@ export const getEquipmentById = async (req, res) => {
   }
 };
 
+// Update equipment - Actual Owner only
 export const updateEquipment = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate equipment ID
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -195,8 +213,9 @@ export const updateEquipment = async (req, res) => {
       });
     }
 
-    // Validate update data
-    const validation = validateEquipmentUpdate(req.body);
+    const validation = validateEquipmentUpdate(
+      req.body
+    );
 
     if (!validation.valid) {
       return res.status(400).json({
@@ -205,8 +224,10 @@ export const updateEquipment = async (req, res) => {
       });
     }
 
-    // Check authenticated Owner
-    if (req.auth?.role !== "owner" || !ObjectId.isValid(req.auth?.userId)) {
+    if (
+      req.auth?.role !== "owner" ||
+      !ObjectId.isValid(req.auth?.userId)
+    ) {
       return res.status(403).json({
         success: false,
         message: "Only Owners can update equipment",
@@ -215,18 +236,24 @@ export const updateEquipment = async (req, res) => {
 
     const db = getDB();
 
-    // Match both equipment ID and authenticated Owner ID
     const filter = {
       _id: new ObjectId(id),
       ownerId: new ObjectId(req.auth.userId),
       deletedAt: { $exists: false },
     };
 
-    const updateData = buildEquipmentUpdate(req.body);
+    const updateData = buildEquipmentUpdate(
+      req.body
+    );
 
-    const result = await db.collection("equipment").updateOne(filter, {
-      $set: updateData,
-    });
+    const result = await db
+      .collection("equipment")
+      .updateOne(
+        filter,
+        {
+          $set: updateData,
+        }
+      );
 
     if (result.matchedCount === 0) {
       return res.status(404).json({
@@ -240,7 +267,10 @@ export const updateEquipment = async (req, res) => {
       message: "Equipment updated successfully",
     });
   } catch (error) {
-    console.error("Equipment update failed:", error.message);
+    console.error(
+      "Equipment update failed:",
+      error.message
+    );
 
     return res.status(500).json({
       success: false,
@@ -249,11 +279,11 @@ export const updateEquipment = async (req, res) => {
   }
 };
 
+// Soft delete equipment - Actual Owner only
 export const deleteEquipment = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Validate equipment ID
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -261,8 +291,10 @@ export const deleteEquipment = async (req, res) => {
       });
     }
 
-    // Verify authenticated Owner
-    if (req.auth?.role !== "owner" || !ObjectId.isValid(req.auth?.userId)) {
+    if (
+      req.auth?.role !== "owner" ||
+      !ObjectId.isValid(req.auth?.userId)
+    ) {
       return res.status(403).json({
         success: false,
         message: "Only Owners can delete equipment",
@@ -271,23 +303,26 @@ export const deleteEquipment = async (req, res) => {
 
     const db = getDB();
 
-    // Only the actual Owner can delete this equipment
     const filter = {
       _id: new ObjectId(id),
       ownerId: new ObjectId(req.auth.userId),
       deletedAt: { $exists: false },
     };
 
-    // Soft delete instead of permanently removing data
     const now = new Date();
 
-    const result = await db.collection("equipment").updateOne(filter, {
-      $set: {
-        availability: false,
-        deletedAt: now,
-        updatedAt: now,
-      },
-    });
+    const result = await db
+      .collection("equipment")
+      .updateOne(
+        filter,
+        {
+          $set: {
+            availability: false,
+            deletedAt: now,
+            updatedAt: now,
+          },
+        }
+      );
 
     if (result.matchedCount === 0) {
       return res.status(404).json({
@@ -301,7 +336,10 @@ export const deleteEquipment = async (req, res) => {
       message: "Equipment deleted successfully",
     });
   } catch (error) {
-    console.error("Equipment deletion failed:", error.message);
+    console.error(
+      "Equipment deletion failed:",
+      error.message
+    );
 
     return res.status(500).json({
       success: false,
@@ -310,17 +348,19 @@ export const deleteEquipment = async (req, res) => {
   }
 };
 
+// List equipment belonging to the logged-in Owner
 export const getMyEquipment = async (req, res) => {
   try {
-    // Validate authenticated Owner
-    if (req.auth?.role !== "owner" || !ObjectId.isValid(req.auth?.userId)) {
+    if (
+      req.auth?.role !== "owner" ||
+      !ObjectId.isValid(req.auth?.userId)
+    ) {
       return res.status(403).json({
         success: false,
         message: "Only Owners can view their equipment",
       });
     }
 
-    // Validate pagination
     const page = Number(req.query.page ?? "1");
     const limit = Number(req.query.limit ?? "10");
 
@@ -339,13 +379,14 @@ export const getMyEquipment = async (req, res) => {
 
     const db = getDB();
 
-    // Show only the authenticated Owner's non-deleted equipment
     const filter = {
       ownerId: new ObjectId(req.auth.userId),
       deletedAt: { $exists: false },
     };
 
-    const total = await db.collection("equipment").countDocuments(filter);
+    const total = await db
+      .collection("equipment")
+      .countDocuments(filter);
 
     const equipment = await db
       .collection("equipment")
@@ -369,7 +410,10 @@ export const getMyEquipment = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Owner equipment listing failed:", error.message);
+    console.error(
+      "Owner equipment listing failed:",
+      error.message
+    );
 
     return res.status(500).json({
       success: false,
@@ -378,12 +422,12 @@ export const getMyEquipment = async (req, res) => {
   }
 };
 
+// Change equipment approval status - Admin only
 const changeEquipmentApprovalStatus = (status) => {
   return async (req, res) => {
     try {
       const { id } = req.params;
 
-      // Validate MongoDB equipment ID
       if (!ObjectId.isValid(id)) {
         return res.status(400).json({
           success: false,
@@ -391,7 +435,6 @@ const changeEquipmentApprovalStatus = (status) => {
         });
       }
 
-      // Only authenticated Admins can change approval status
       if (
         req.auth?.role !== "admin" ||
         !ObjectId.isValid(req.auth?.userId)
@@ -404,26 +447,33 @@ const changeEquipmentApprovalStatus = (status) => {
 
       const db = getDB();
 
-      const result = await db.collection("equipment").updateOne(
-        {
-          _id: new ObjectId(id),
-          deletedAt: { $exists: false },
-          status: "pending",
-        },
-        {
-          $set: {
-            status,
-            reviewedAt: new Date(),
-            reviewedBy: new ObjectId(req.auth.userId),
-            updatedAt: new Date(),
+      const now = new Date();
+
+      const result = await db
+        .collection("equipment")
+        .updateOne(
+          {
+            _id: new ObjectId(id),
+            deletedAt: { $exists: false },
+            status: "pending",
           },
-        },
-      );
+          {
+            $set: {
+              status,
+              reviewedAt: now,
+              reviewedBy: new ObjectId(
+                req.auth.userId
+              ),
+              updatedAt: now,
+            },
+          }
+        );
 
       if (result.matchedCount === 0) {
         return res.status(404).json({
           success: false,
-          message: "Equipment not found or not eligible for review",
+          message:
+            "Equipment not found or not eligible for review",
         });
       }
 
@@ -440,16 +490,17 @@ const changeEquipmentApprovalStatus = (status) => {
 
       return res.status(500).json({
         success: false,
-        message: "Failed to update equipment approval status",
+        message:
+          "Failed to update equipment approval status",
       });
     }
   };
 };
 
-// Admin approves equipment
+// Admin approves pending equipment
 export const approveEquipment =
   changeEquipmentApprovalStatus("approved");
 
-// Admin rejects equipment
+// Admin rejects pending equipment
 export const rejectEquipment =
   changeEquipmentApprovalStatus("rejected");
