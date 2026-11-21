@@ -2,11 +2,16 @@
 import { Router } from "express";
 
 import { verifyToken } from "../middleware/verifyToken.js";
-import { verifyCustomer } from "../middleware/verifyRole.js";
+
+import {
+  verifyCustomer,
+  verifyOwner,
+} from "../middleware/verifyRole.js";
 
 import {
   createBooking,
   getMyBookings,
+  getOwnerBookings,
   cancelBooking,
 } from "../controllers/booking.controller.js";
 
@@ -26,6 +31,14 @@ router.get(
   verifyToken,
   verifyCustomer,
   getMyBookings
+);
+
+// Owner views bookings for their own equipment
+router.get(
+  "/owner",
+  verifyToken,
+  verifyOwner,
+  getOwnerBookings
 );
 
 // Customer cancels their own pending, unpaid booking

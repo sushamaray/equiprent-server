@@ -12,13 +12,11 @@ import {
   buildBookingDocument,
 } from "../models/booking.model.js";
 
-// Booking statuses that reserve equipment stock
 const ACTIVE_BOOKING_STATUSES = [
   "pending",
   "confirmed",
 ];
 
-// Controlled API errors
 class BookingError extends Error {
   constructor(statusCode, message) {
     super(message);
@@ -27,7 +25,6 @@ class BookingError extends Error {
   }
 }
 
-// Validate pagination parameters
 const getPagination = (query) => {
   const page = Number(query.page ?? "1");
   const limit = Number(query.limit ?? "10");
@@ -169,8 +166,7 @@ export const createBooking = async (req, res) => {
           );
         }
 
-        // Coordinate concurrent operations
-        // using the equipment document
+        // Coordinate concurrent reservations
         const reservationLock = await db
           .collection("equipment")
           .updateOne(
@@ -200,7 +196,7 @@ export const createBooking = async (req, res) => {
           endDate
         );
 
-        // Rental intervals are [startDate, endDate)
+        // Date intervals are [startDate, endDate)
         const overlappingBookings = await db
           .collection("bookings")
           .find(
@@ -240,7 +236,6 @@ export const createBooking = async (req, res) => {
           );
         }
 
-        // Calculate price using trusted database values
         const totalPrice =
           equipment.pricePerDay *
           rentalDays *
@@ -400,7 +395,80 @@ export const getMyBookings = async (req, res) => {
   }
 };
 
-// Cancel own pending and unpaid booking - Customer only
+// NEW: Get bookings for authenticated Owner's equipment
+export const getOwnerBookings = async (req, res) => {
+  try {
+    // Only Owners may access this endpoint
+    if (
+      req.auth?.role !== "owner" ||
+      !ObjectId.isValid(req.auth?.userId)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Only Owners can view equipment bookings",
+      });
+    }
+
+    const { page, limit } = getPagination(
+      req.query
+    );
+
+    const db = getDB();
+
+    // Filter by verified Owner ID from JWT + RBAC
+    // Never trust an ownerId from query parameters
+    const filter = {
+      ownerId: new ObjectId(
+        req.auth.userId
+      ),
+    };
+
+    const total = await db
+      .collection("bookings")
+      .countDocuments(filter);
+
+    const bookings = await db
+      .collection("bookings")
+      .find(filter)
+      .sort({
+        createdAt: -1,
+        _id: -1,
+      })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .toArray();
+
+    return res.status(200).json({
+      success: true,
+      data: bookings,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    if (error instanceof BookingError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    console.error(
+      "Owner booking listing failed:",
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve Owner bookings",
+    });
+  }
+};
+
+// Cancel own pending, unpaid booking - Customer only
 export const cancelBooking = async (req, res) => {
   if (
     req.auth?.role !== "customer" ||
@@ -437,7 +505,6 @@ export const cancelBooking = async (req, res) => {
 
     const cancelledBooking = await session.withTransaction(
       async () => {
-        // Only find a booking belonging to this Customer
         const booking = await db
           .collection("bookings")
           .findOne(
@@ -462,7 +529,6 @@ export const cancelBooking = async (req, res) => {
           );
         }
 
-        // Avoid cancelling bookings that may require a refund
         if (booking.paymentStatus !== "unpaid") {
           throw new BookingError(
             409,
@@ -471,7 +537,6 @@ export const cancelBooking = async (req, res) => {
         }
 
         // Coordinate with booking creation transactions
-        // through the same equipment document
         const reservationLock = await db
           .collection("equipment")
           .updateOne(
@@ -495,7 +560,6 @@ export const cancelBooking = async (req, res) => {
 
         const now = new Date();
 
-        // Atomic conditional transition
         const result = await db
           .collection("bookings")
           .updateOne(
