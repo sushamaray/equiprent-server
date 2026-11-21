@@ -1,3 +1,4 @@
+
 const requiredTextFields = ["name", "description", "category", "location"];
 
 export const validateEquipment = (data) => {
@@ -75,6 +76,10 @@ export const buildEquipmentDocument = (data, ownerId) => {
     location: data.location.trim(),
     image: data.image.trim(),
     availability: data.availability ?? true,
+
+    // New equipment must be approved by an Admin
+    status: "pending",
+
     ownerId,
     createdAt: now,
     updatedAt: now,
@@ -163,7 +168,10 @@ export const validateEquipmentUpdate = (data) => {
     }
   }
 
-  if ("availability" in data && typeof data.availability !== "boolean") {
+  if (
+    "availability" in data &&
+    typeof data.availability !== "boolean"
+  ) {
     return {
       valid: false,
       message: "availability must be a boolean",
@@ -182,7 +190,9 @@ export const buildEquipmentUpdate = (data) => {
   for (const field of editableEquipmentFields) {
     if (Object.prototype.hasOwnProperty.call(data, field)) {
       update[field] =
-        typeof data[field] === "string" ? data[field].trim() : data[field];
+        typeof data[field] === "string"
+          ? data[field].trim()
+          : data[field];
     }
   }
 

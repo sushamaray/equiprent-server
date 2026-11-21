@@ -237,6 +237,26 @@ try {
     console.error("FAIL: Customer accessed Owner equipment listing");
     process.exitCode = 1;
   }
+  // Step 12: Customer cannot approve equipment
+  const approveResponse = await fetch(
+    `${baseURL}/api/equipment/6b01bb4525ce461ff7cfe418/approve`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  console.log("Customer equipment approval status:", approveResponse.status);
+
+  const approveData = await approveResponse.json();
+
+  if (approveResponse.status === 403 && approveData.success === false) {
+    console.log("PASS: Customer blocked from approving equipment");
+  } else {
+    throw new Error("FAIL: Customer equipment approval restriction failed");
+  }
 } catch (error) {
   console.error("Test failed:", error.message);
   process.exitCode = 1;

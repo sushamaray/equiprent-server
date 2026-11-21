@@ -2,7 +2,11 @@
 import { Router } from "express";
 
 import { verifyToken } from "../middleware/verifyToken.js";
-import { verifyOwner } from "../middleware/verifyRole.js";
+
+import {
+  verifyOwner,
+  verifyAdmin,
+} from "../middleware/verifyRole.js";
 
 import {
   createEquipment,
@@ -11,14 +15,16 @@ import {
   getMyEquipment,
   updateEquipment,
   deleteEquipment,
+  approveEquipment,
+  rejectEquipment,
 } from "../controllers/equipment.controller.js";
 
 const router = Router();
 
-// Public: View available equipment
+// Public: View approved and available equipment
 router.get("/", getAllEquipment);
 
-// Protected: Owners can view only their own equipment
+// Protected: Owners can view their own equipment
 router.get(
   "/my",
   verifyToken,
@@ -26,7 +32,7 @@ router.get(
   getMyEquipment
 );
 
-// Public: View single equipment details
+// Public: View approved equipment details
 router.get("/:id", getEquipmentById);
 
 // Protected: Only Owners can create equipment
@@ -37,7 +43,7 @@ router.post(
   createEquipment
 );
 
-// Protected: Only the equipment Owner can update it
+// Protected: Only the actual Owner can update equipment
 router.patch(
   "/:id",
   verifyToken,
@@ -45,12 +51,28 @@ router.patch(
   updateEquipment
 );
 
-// Protected: Only the equipment Owner can delete it
+// Protected: Only the actual Owner can soft-delete equipment
 router.delete(
   "/:id",
   verifyToken,
   verifyOwner,
   deleteEquipment
+);
+
+// Protected: Only Admins can approve equipment
+router.patch(
+  "/:id/approve",
+  verifyToken,
+  verifyAdmin,
+  approveEquipment
+);
+
+// Protected: Only Admins can reject equipment
+router.patch(
+  "/:id/reject",
+  verifyToken,
+  verifyAdmin,
+  rejectEquipment
 );
 
 export default router;

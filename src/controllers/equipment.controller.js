@@ -80,6 +80,8 @@ export const getAllEquipment = async (req, res) => {
 
     const filter = {
       availability: true,
+      status: "approved",
+      deletedAt: { $exists: false },
     };
 
     const total = await db.collection("equipment").countDocuments(filter);
@@ -143,6 +145,8 @@ export const getEquipmentById = async (req, res) => {
       {
         _id: new ObjectId(id),
         availability: true,
+        status: "approved",
+        deletedAt: { $exists: false },
       },
       {
         projection: {
@@ -373,3 +377,79 @@ export const getMyEquipment = async (req, res) => {
     });
   }
 };
+
+const changeEquipmentApprovalStatus = (status) => {
+  return async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Validate MongoDB equipment ID
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid equipment ID",
+        });
+      }
+
+      // Only authenticated Admins can change approval status
+      if (
+        req.auth?.role !== "admin" ||
+        !ObjectId.isValid(req.auth?.userId)
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: "Only Admins can review equipment",
+        });
+      }
+
+      const db = getDB();
+
+      const result = await db.collection("equipment").updateOne(
+        {
+          _id: new ObjectId(id),
+          deletedAt: { $exists: false },
+          status: "pending",
+        },
+        {
+          $set: {
+            status,
+            reviewedAt: new Date(),
+            reviewedBy: new ObjectId(req.auth.userId),
+            updatedAt: new Date(),
+          },
+        },
+      );
+
+      if (result.matchedCount === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Equipment not found or not eligible for review",
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `Equipment ${status} successfully`,
+        status,
+      });
+    } catch (error) {
+      console.error(
+        "Equipment approval status update failed:",
+        error.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update equipment approval status",
+      });
+    }
+  };
+};
+
+// Admin approves equipment
+export const approveEquipment =
+  changeEquipmentApprovalStatus("approved");
+
+// Admin rejects equipment
+export const rejectEquipment =
+  changeEquipmentApprovalStatus("rejected");

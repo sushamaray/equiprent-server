@@ -416,6 +416,26 @@ try {
   }
 
   console.log("PASS: Paginated equipment ownership verified");
+  // Step 12: Owner cannot approve their own equipment
+  const approveResponse = await fetch(
+    `${baseURL}/api/equipment/${equipmentId}/approve`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  console.log("Owner equipment approval status:", approveResponse.status);
+
+  const approveData = await approveResponse.json();
+
+  if (approveResponse.status === 403 && approveData.success === false) {
+    console.log("PASS: Owner blocked from approving equipment");
+  } else {
+    throw new Error("Owner equipment approval restriction failed");
+  }
 } catch (error) {
   console.error("Test failed:", error.message);
   process.exitCode = 1;
