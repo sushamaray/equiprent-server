@@ -99,6 +99,151 @@ try {
     console.error("FAIL: Admin-only API access restriction failed");
     process.exitCode = 1;
   }
+  // Step 5: Owner cannot create invalid equipment
+  const invalidEquipmentResponse = await fetch(`${baseURL}/api/equipment`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: "",
+      description: "Camera for rental testing",
+      category: "Camera",
+      pricePerDay: -500,
+      location: "Dhaka",
+      image: "https://example.com/camera.jpg",
+    }),
+  });
+
+  console.log("Invalid equipment status:", invalidEquipmentResponse.status);
+
+  const invalidEquipmentData = await invalidEquipmentResponse.json();
+
+  if (
+    invalidEquipmentResponse.status === 400 &&
+    invalidEquipmentData.success === false
+  ) {
+    console.log("PASS: Invalid equipment data rejected");
+  } else {
+    console.error("FAIL: Equipment validation test failed");
+    process.exitCode = 1;
+  }
+  // Step 6: Owner creates valid equipment
+  //   const validEquipmentResponse = await fetch(`${baseURL}/api/equipment`, {
+  //     method: "POST",
+  //     headers: {
+  //       "Content-Type": "application/json",
+  //       Authorization: `Bearer ${token}`,
+  //     },
+  //     body: JSON.stringify({
+  //       name: "Canon EOS R50 Camera - Test",
+  //       description: "Camera for equipment rental testing",
+  //       category: "Camera",
+  //       pricePerDay: 800,
+  //       location: "Dhaka",
+  //       image: "https://example.com/camera.jpg",
+  //       availability: true,
+  //     }),
+  //   });
+
+  //   console.log(
+  //     "Valid equipment creation status:",
+  //     validEquipmentResponse.status,
+  //   );
+
+  //   const validEquipmentData = await validEquipmentResponse.json();
+
+  //   if (
+  //     validEquipmentResponse.status === 201 &&
+  //     validEquipmentData.success === true &&
+  //     validEquipmentData.equipment?._id &&
+  //     validEquipmentData.equipment?.ownerId === loginData.user.id
+  //   ) {
+  //     console.log("PASS: Owner successfully created equipment");
+  //     console.log("PASS: Equipment owner ID matches authenticated Owner");
+  //   } else {
+  //     console.error("FAIL: Valid equipment creation test failed");
+  //     console.error("Response status:", validEquipmentResponse.status);
+  //     console.error(
+  //       "Response message:",
+  //       validEquipmentData.message || "Unexpected result",
+  //     );
+  //     process.exitCode = 1;
+  //   }
+  // Step 7: Owner cannot update equipment with invalid data
+  const invalidUpdateResponse = await fetch(
+    `${baseURL}/api/equipment/6b01bb4525ce461ff7cfe418`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        pricePerDay: -100,
+      }),
+    },
+  );
+
+  console.log("Invalid equipment update status:", invalidUpdateResponse.status);
+
+  const invalidUpdateData = await invalidUpdateResponse.json();
+
+  if (
+    invalidUpdateResponse.status === 400 &&
+    invalidUpdateData.success === false &&
+    invalidUpdateData.message === "pricePerDay must be a positive number"
+  ) {
+    console.log("PASS: Invalid equipment update rejected");
+  } else {
+    console.error("FAIL: Equipment update validation failed");
+    process.exitCode = 1;
+  }
+  // Step 8: Owner updates own equipment
+  const equipmentId = "6b01bb4525ce461ff7cfe418";
+
+  const validUpdateResponse = await fetch(
+    `${baseURL}/api/equipment/${equipmentId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        pricePerDay: 1000,
+      }),
+    },
+  );
+
+  console.log("Valid equipment update status:", validUpdateResponse.status);
+
+  const validUpdateData = await validUpdateResponse.json();
+
+  if (validUpdateResponse.status !== 200 || validUpdateData.success !== true) {
+    console.error("FAIL: Owner equipment update failed");
+    process.exitCode = 1;
+  } else {
+    console.log("PASS: Owner successfully updated equipment");
+
+    // Verify updated price using public Details API
+    const detailsResponse = await fetch(
+      `${baseURL}/api/equipment/${equipmentId}`,
+    );
+
+    const detailsData = await detailsResponse.json();
+
+    if (
+      detailsResponse.status === 200 &&
+      detailsData.equipment?.pricePerDay === 1000
+    ) {
+      console.log("PASS: Updated equipment price verified");
+    } else {
+      console.error("FAIL: Updated equipment price mismatch");
+      process.exitCode = 1;
+    }
+  }
 } catch (error) {
   console.error("Test failed:", error.message);
   process.exitCode = 1;

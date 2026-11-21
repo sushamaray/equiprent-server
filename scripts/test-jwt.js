@@ -141,6 +141,82 @@ try {
     console.error("FAIL: Admin-only API authorization failed");
     process.exitCode = 1;
   }
+
+  // Step 8: Customer cannot create equipment
+  const equipmentResponse = await fetch(`${baseURL}/api/equipment`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: "Test Camera",
+      description: "Camera for rental testing",
+      category: "Camera",
+      pricePerDay: 500,
+      location: "Dhaka",
+      image: "https://example.com/camera.jpg",
+      availability: true,
+    }),
+  });
+
+  console.log("Customer equipment creation status:", equipmentResponse.status);
+
+  const equipmentData = await equipmentResponse.json();
+
+  if (equipmentResponse.status === 403 && equipmentData.success === false) {
+    console.log("PASS: Customer blocked from creating equipment");
+  } else {
+    console.error("FAIL: Customer equipment creation restriction failed");
+    process.exitCode = 1;
+  }
+
+  // Step 9: Customer cannot update Owner equipment
+  const updateResponse = await fetch(
+    `${baseURL}/api/equipment/6b01bb4525ce461ff7cfe418`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        pricePerDay: 1000,
+      }),
+    },
+  );
+
+  console.log("Customer equipment update status:", updateResponse.status);
+
+  const updateData = await updateResponse.json();
+
+  if (updateResponse.status === 403 && updateData.success === false) {
+    console.log("PASS: Customer blocked from updating equipment");
+  } else {
+    console.error("FAIL: Customer equipment update restriction failed");
+    process.exitCode = 1;
+  }
+  // Step 10: Customer cannot delete Owner equipment
+  const deleteResponse = await fetch(
+    `${baseURL}/api/equipment/6b01bb4525ce461ff7cfe418`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  console.log("Customer equipment delete status:", deleteResponse.status);
+
+  const deleteData = await deleteResponse.json();
+
+  if (deleteResponse.status === 403 && deleteData.success === false) {
+    console.log("PASS: Customer blocked from deleting equipment");
+  } else {
+    console.error("FAIL: Customer equipment delete restriction failed");
+    process.exitCode = 1;
+  }
 } catch (error) {
   console.error("Test failed:", error.message);
   process.exitCode = 1;

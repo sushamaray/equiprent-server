@@ -15,6 +15,8 @@ import {
 } from "./middleware/verifyRole.js";
 const app = express();
 
+import equipmentRoutes from "./routes/equipment.routes.js";
+
 const PORT = process.env.PORT || 5000;
 
 // CORS middleware
@@ -55,6 +57,9 @@ const startServer = async () => {
 
     // JSON middleware must come after Better Auth
     app.use(express.json());
+
+    // Equipment API routes
+    app.use("/api/equipment", equipmentRoutes);
 
     // Protected test route
     app.get("/api/protected", verifyToken, (req, res) => {
