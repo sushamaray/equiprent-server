@@ -1,4 +1,3 @@
-
 import express from "express";
 import cors from "cors";
 import "dotenv/config";
@@ -9,6 +8,11 @@ import { connectDB } from "./config/db.js";
 import { createAuth } from "./config/auth.js";
 import { verifyToken } from "./middleware/verifyToken.js";
 
+import {
+  verifyCustomer,
+  verifyOwner,
+  verifyAdmin,
+} from "./middleware/verifyRole.js";
 const app = express();
 
 const PORT = process.env.PORT || 5000;
@@ -19,7 +23,7 @@ app.use(
     origin: process.env.CLIENT_URL || "http://localhost:3000",
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-  })
+  }),
 );
 
 // Root route
@@ -61,11 +65,39 @@ const startServer = async () => {
       });
     });
 
+    // Customer-only test route
+    app.get("/api/customer/test", verifyToken, verifyCustomer, (req, res) => {
+      res.status(200).json({
+        success: true,
+        message: "Customer access granted",
+        userId: req.auth.userId,
+        role: req.auth.role,
+      });
+    });
+
+    // Owner-only test route
+    app.get("/api/owner/test", verifyToken, verifyOwner, (req, res) => {
+      res.status(200).json({
+        success: true,
+        message: "Owner access granted",
+        userId: req.auth.userId,
+        role: req.auth.role,
+      });
+    });
+
+    // Admin-only test route
+    app.get("/api/admin/test", verifyToken, verifyAdmin, (req, res) => {
+      res.status(200).json({
+        success: true,
+        message: "Admin access granted",
+        userId: req.auth.userId,
+        role: req.auth.role,
+      });
+    });
+
     // Start Express server
     app.listen(PORT, () => {
-      console.log(
-        `EquipRent server running on http://localhost:${PORT}`
-      );
+      console.log(`EquipRent server running on http://localhost:${PORT}`);
       console.log("Better Auth routes initialized");
       console.log("Protected API route initialized");
     });
