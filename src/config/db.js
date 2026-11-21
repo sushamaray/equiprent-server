@@ -49,3 +49,12 @@ export const closeDB = async () => {
     database = undefined;
   }
 };
+
+
+export const getMongoClient = () => {
+  if (!client) {
+    throw new Error("MongoDB client is not initialized");
+  }
+
+  return client;
+};
