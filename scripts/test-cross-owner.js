@@ -140,6 +140,50 @@ try {
   } else {
     throw new Error("Equipment changed after unauthorized delete attempt");
   }
+  // Step 8: Verify Owner B equipment listing
+  const myEquipmentResponse = await fetch(`${baseURL}/api/equipment/my`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  console.log("Owner B equipment listing status:", myEquipmentResponse.status);
+
+  const myEquipmentData = await myEquipmentResponse.json();
+
+  if (
+    myEquipmentResponse.status !== 200 ||
+    myEquipmentData.success !== true ||
+    !Array.isArray(myEquipmentData.data)
+  ) {
+    throw new Error("Owner B equipment listing failed");
+  }
+
+  console.log("PASS: Owner B equipment listing works");
+
+  // Owner A's camera must not appear in Owner B's listing
+  const containsOwnerACamera = myEquipmentData.data.some(
+    (item) => String(item._id) === equipmentId,
+  );
+
+  if (containsOwnerACamera) {
+    throw new Error("Owner A equipment exposed to Owner B");
+  }
+
+  console.log("PASS: Owner A equipment hidden from Owner B");
+
+  // Owner B's deleted equipment must not appear
+  const deletedEquipmentId = "6b01c1c1e00eae796cfa1e00";
+
+  const containsDeletedEquipment = myEquipmentData.data.some(
+    (item) => String(item._id) === deletedEquipmentId,
+  );
+
+  if (containsDeletedEquipment) {
+    throw new Error("Soft-deleted equipment exposed");
+  }
+
+  console.log("PASS: Soft-deleted equipment hidden from Owner B");
 } catch (error) {
   console.error("FAIL:", error.message);
   process.exitCode = 1;

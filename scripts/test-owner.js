@@ -82,6 +82,7 @@ try {
     );
     process.exitCode = 1;
   }
+
   // Step 4: Owner must not access Admin-only API
   const adminResponse = await fetch(`${baseURL}/api/admin/test`, {
     headers: {
@@ -99,6 +100,7 @@ try {
     console.error("FAIL: Admin-only API access restriction failed");
     process.exitCode = 1;
   }
+
   // Step 5: Owner cannot create invalid equipment
   const invalidEquipmentResponse = await fetch(`${baseURL}/api/equipment`, {
     method: "POST",
@@ -129,48 +131,52 @@ try {
     console.error("FAIL: Equipment validation test failed");
     process.exitCode = 1;
   }
+
   // Step 6: Owner creates valid equipment
-  //   const validEquipmentResponse = await fetch(`${baseURL}/api/equipment`, {
-  //     method: "POST",
-  //     headers: {
-  //       "Content-Type": "application/json",
-  //       Authorization: `Bearer ${token}`,
-  //     },
-  //     body: JSON.stringify({
-  //       name: "Canon EOS R50 Camera - Test",
-  //       description: "Camera for equipment rental testing",
-  //       category: "Camera",
-  //       pricePerDay: 800,
-  //       location: "Dhaka",
-  //       image: "https://example.com/camera.jpg",
-  //       availability: true,
-  //     }),
-  //   });
-
-  //   console.log(
-  //     "Valid equipment creation status:",
-  //     validEquipmentResponse.status,
+  // Disabled to avoid creating duplicate test equipment.
+  //
+  // const validEquipmentResponse = await fetch(`${baseURL}/api/equipment`, {
+  //   method: "POST",
+  //   headers: {
+  //     "Content-Type": "application/json",
+  //     Authorization: `Bearer ${token}`,
+  //   },
+  //   body: JSON.stringify({
+  //     name: "Canon EOS R50 Camera - Test",
+  //     description: "Camera for equipment rental testing",
+  //     category: "Camera",
+  //     pricePerDay: 800,
+  //     location: "Dhaka",
+  //     image: "https://example.com/camera.jpg",
+  //     availability: true,
+  //   }),
+  // });
+  //
+  // console.log(
+  //   "Valid equipment creation status:",
+  //   validEquipmentResponse.status,
+  // );
+  //
+  // const validEquipmentData = await validEquipmentResponse.json();
+  //
+  // if (
+  //   validEquipmentResponse.status === 201 &&
+  //   validEquipmentData.success === true &&
+  //   validEquipmentData.equipment?._id &&
+  //   validEquipmentData.equipment?.ownerId === loginData.user.id
+  // ) {
+  //   console.log("PASS: Owner successfully created equipment");
+  //   console.log("PASS: Equipment owner ID matches authenticated Owner");
+  // } else {
+  //   console.error("FAIL: Valid equipment creation test failed");
+  //   console.error("Response status:", validEquipmentResponse.status);
+  //   console.error(
+  //     "Response message:",
+  //     validEquipmentData.message || "Unexpected result",
   //   );
+  //   process.exitCode = 1;
+  // }
 
-  //   const validEquipmentData = await validEquipmentResponse.json();
-
-  //   if (
-  //     validEquipmentResponse.status === 201 &&
-  //     validEquipmentData.success === true &&
-  //     validEquipmentData.equipment?._id &&
-  //     validEquipmentData.equipment?.ownerId === loginData.user.id
-  //   ) {
-  //     console.log("PASS: Owner successfully created equipment");
-  //     console.log("PASS: Equipment owner ID matches authenticated Owner");
-  //   } else {
-  //     console.error("FAIL: Valid equipment creation test failed");
-  //     console.error("Response status:", validEquipmentResponse.status);
-  //     console.error(
-  //       "Response message:",
-  //       validEquipmentData.message || "Unexpected result",
-  //     );
-  //     process.exitCode = 1;
-  //   }
   // Step 7: Owner cannot update equipment with invalid data
   const invalidUpdateResponse = await fetch(
     `${baseURL}/api/equipment/6b01bb4525ce461ff7cfe418`,
@@ -200,6 +206,7 @@ try {
     console.error("FAIL: Equipment update validation failed");
     process.exitCode = 1;
   }
+
   // Step 8: Owner updates own equipment
   const equipmentId = "6b01bb4525ce461ff7cfe418";
 
@@ -244,6 +251,171 @@ try {
       process.exitCode = 1;
     }
   }
+
+  // Step 9: Owner A can view only their own equipment
+  const myEquipmentResponse = await fetch(
+    `${baseURL}/api/equipment/my?page=1&limit=50`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  console.log("Owner A equipment listing status:", myEquipmentResponse.status);
+
+  const myEquipmentData = await myEquipmentResponse.json();
+
+  if (
+    myEquipmentResponse.status !== 200 ||
+    myEquipmentData.success !== true ||
+    !Array.isArray(myEquipmentData.data)
+  ) {
+    throw new Error("Owner A equipment listing failed");
+  }
+
+  console.log("PASS: Owner A equipment listing works");
+
+  // Verify that every returned equipment belongs to Owner A
+  const allBelongToOwner = myEquipmentData.data.every(
+    (item) => String(item.ownerId) === loginData.user.id,
+  );
+
+  if (!allBelongToOwner) {
+    throw new Error("Another Owner's equipment appeared in the list");
+  }
+
+  console.log("PASS: All equipment belongs to Owner A");
+
+  // Verify Owner A's existing camera appears
+  const cameraFound = myEquipmentData.data.some(
+    (item) => String(item._id) === equipmentId,
+  );
+
+  if (!cameraFound) {
+    throw new Error("Owner A camera missing from equipment list");
+  }
+
+  console.log("PASS: Owner A camera found");
+
+  // Verify Owner B's soft-deleted equipment is not exposed
+  const ownerBEquipmentFound = myEquipmentData.data.some(
+    (item) => String(item._id) === "6b01c1c1e00eae796cfa1e00",
+  );
+
+  if (ownerBEquipmentFound) {
+    throw new Error("Owner B equipment exposed to Owner A");
+  }
+
+  console.log("PASS: Owner B equipment hidden from Owner A");
+
+  // Verify pagination metadata
+  const pagination = myEquipmentData.pagination;
+
+  if (
+    pagination?.page !== 1 ||
+    pagination?.limit !== 50 ||
+    !Number.isInteger(pagination.total) ||
+    !Number.isInteger(pagination.totalPages)
+  ) {
+    throw new Error("Owner equipment pagination metadata invalid");
+  }
+
+  console.log("PASS: Owner equipment pagination metadata verified");
+
+  // Step 10: Reject invalid Owner equipment pagination
+  const invalidPaginationCases = [
+    "?page=0&limit=10",
+    "?page=1&limit=0",
+    "?page=1&limit=100",
+    "?page=abc&limit=10",
+    "?page=1.5&limit=10",
+  ];
+
+  for (const query of invalidPaginationCases) {
+    const response = await fetch(`${baseURL}/api/equipment/my${query}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+
+    console.log(`Owner pagination ${query} status:`, response.status);
+
+    if (response.status !== 400 || data.success !== false) {
+      throw new Error(`Invalid pagination was accepted: ${query}`);
+    }
+  }
+
+  console.log("PASS: All invalid Owner pagination parameters rejected");
+
+  // Step 11: Verify valid Owner equipment pagination
+  const firstPageResponse = await fetch(
+    `${baseURL}/api/equipment/my?page=1&limit=1`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  const firstPageData = await firstPageResponse.json();
+
+  console.log("Owner pagination page 1 status:", firstPageResponse.status);
+
+  if (
+    firstPageResponse.status !== 200 ||
+    firstPageData.success !== true ||
+    !Array.isArray(firstPageData.data) ||
+    firstPageData.data.length > 1 ||
+    firstPageData.pagination?.page !== 1 ||
+    firstPageData.pagination?.limit !== 1
+  ) {
+    throw new Error("Owner pagination page 1 failed");
+  }
+
+  console.log("PASS: Owner pagination page 1 works");
+
+  // Request a second page
+  const secondPageResponse = await fetch(
+    `${baseURL}/api/equipment/my?page=2&limit=1`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  const secondPageData = await secondPageResponse.json();
+
+  console.log("Owner pagination page 2 status:", secondPageResponse.status);
+
+  if (
+    secondPageResponse.status !== 200 ||
+    secondPageData.success !== true ||
+    !Array.isArray(secondPageData.data) ||
+    secondPageData.data.length > 1 ||
+    secondPageData.pagination?.page !== 2 ||
+    secondPageData.pagination?.limit !== 1
+  ) {
+    throw new Error("Owner pagination page 2 failed");
+  }
+
+  console.log("PASS: Owner pagination page 2 works");
+
+  // Verify data isolation on both pages
+  const paginatedEquipment = [...firstPageData.data, ...secondPageData.data];
+
+  const onlyOwnerEquipment = paginatedEquipment.every(
+    (item) => String(item.ownerId) === loginData.user.id && !item.deletedAt,
+  );
+
+  if (!onlyOwnerEquipment) {
+    throw new Error("Invalid equipment in paginated results");
+  }
+
+  console.log("PASS: Paginated equipment ownership verified");
 } catch (error) {
   console.error("Test failed:", error.message);
   process.exitCode = 1;

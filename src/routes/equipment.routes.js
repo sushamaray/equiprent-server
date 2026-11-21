@@ -8,6 +8,7 @@ import {
   createEquipment,
   getAllEquipment,
   getEquipmentById,
+  getMyEquipment,
   updateEquipment,
   deleteEquipment,
 } from "../controllers/equipment.controller.js";
@@ -16,6 +17,14 @@ const router = Router();
 
 // Public: View available equipment
 router.get("/", getAllEquipment);
+
+// Protected: Owners can view only their own equipment
+router.get(
+  "/my",
+  verifyToken,
+  verifyOwner,
+  getMyEquipment
+);
 
 // Public: View single equipment details
 router.get("/:id", getEquipmentById);

@@ -217,6 +217,26 @@ try {
     console.error("FAIL: Customer equipment delete restriction failed");
     process.exitCode = 1;
   }
+  // Step 11: Customer cannot access Owner equipment listing
+  const myEquipmentResponse = await fetch(`${baseURL}/api/equipment/my`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  console.log(
+    "Customer accessing Owner equipment list status:",
+    myEquipmentResponse.status,
+  );
+
+  const myEquipmentData = await myEquipmentResponse.json();
+
+  if (myEquipmentResponse.status === 403 && myEquipmentData.success === false) {
+    console.log("PASS: Customer blocked from Owner equipment listing");
+  } else {
+    console.error("FAIL: Customer accessed Owner equipment listing");
+    process.exitCode = 1;
+  }
 } catch (error) {
   console.error("Test failed:", error.message);
   process.exitCode = 1;
