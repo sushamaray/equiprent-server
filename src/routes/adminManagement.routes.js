@@ -7,6 +7,7 @@ import {
   getAllUsers,
   changeUserRole,
   getAllAdminEquipment,
+  adminUpdateEquipment,
   adminDeleteEquipment,
   getAllAdminRentals,
 } from "../controllers/adminManagement.controller.js";
@@ -19,6 +20,7 @@ router.get("/users", getAllUsers);
 router.patch("/users/:id/role", changeUserRole);
 
 router.get("/equipment", getAllAdminEquipment);
+router.patch("/equipment/:id", adminUpdateEquipment);
 router.delete("/equipment/:id", adminDeleteEquipment);
 
 router.get("/rentals", getAllAdminRentals);
