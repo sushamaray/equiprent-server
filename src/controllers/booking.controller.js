@@ -119,6 +119,7 @@ export const getMyBookings = async (req, res) => {
 };
 
 // Get bookings for authenticated Owner's equipment
+
 export const getOwnerBookings = async (req, res) => {
   try {
     if (
@@ -131,17 +132,12 @@ export const getOwnerBookings = async (req, res) => {
       });
     }
 
-    const { page, limit } = getPagination(
-      req.query
-    );
-
+    const { page, limit } = getPagination(req.query);
     const db = getDB();
 
-    // Never trust ownerId supplied in query parameters
+    // Only return bookings belonging to the authenticated owner.
     const filter = {
-      ownerId: new ObjectId(
-        req.auth.userId
-      ),
+      ownerId: new ObjectId(req.auth.userId),
     };
 
     const total = await db
@@ -150,13 +146,107 @@ export const getOwnerBookings = async (req, res) => {
 
     const bookings = await db
       .collection("bookings")
-      .find(filter)
-      .sort({
-        createdAt: -1,
-        _id: -1,
-      })
-      .skip((page - 1) * limit)
-      .limit(limit)
+      .aggregate([
+        {
+          $match: filter,
+        },
+        {
+          $sort: {
+            createdAt: -1,
+            _id: -1,
+          },
+        },
+        {
+          $skip: (page - 1) * limit,
+        },
+        {
+          $limit: limit,
+        },
+
+        // Get customer details from Better Auth's user collection.
+        {
+          $lookup: {
+            from: "user",
+            localField: "customerId",
+            foreignField: "_id",
+            pipeline: [
+              {
+                $project: {
+                  name: 1,
+                  email: 1,
+                },
+              },
+            ],
+            as: "customerInfo",
+          },
+        },
+
+        // Get the actual equipment name.
+        {
+          $lookup: {
+            from: "equipment",
+            localField: "equipmentId",
+            foreignField: "_id",
+            pipeline: [
+              {
+                $project: {
+                  name: 1,
+                },
+              },
+            ],
+            as: "equipmentInfo",
+          },
+        },
+
+        // Add readable fields without changing booking data.
+        {
+          $addFields: {
+            customerName: {
+              $ifNull: [
+                {
+                  $arrayElemAt: [
+                    "$customerInfo.name",
+                    0,
+                  ],
+                },
+                "Unknown Customer",
+              ],
+            },
+
+            customerEmail: {
+              $ifNull: [
+                {
+                  $arrayElemAt: [
+                    "$customerInfo.email",
+                    0,
+                  ],
+                },
+                "",
+              ],
+            },
+
+            equipmentName: {
+              $ifNull: [
+                {
+                  $arrayElemAt: [
+                    "$equipmentInfo.name",
+                    0,
+                  ],
+                },
+                "Unknown Equipment",
+              ],
+            },
+          },
+        },
+
+        // Don't expose joined internal documents.
+        {
+          $project: {
+            customerInfo: 0,
+            equipmentInfo: 0,
+          },
+        },
+      ])
       .toArray();
 
     return res.status(200).json({
@@ -179,7 +269,7 @@ export const getOwnerBookings = async (req, res) => {
 
     console.error(
       "Owner booking listing failed:",
-      error.message
+      error.message,
     );
 
     return res.status(500).json({
