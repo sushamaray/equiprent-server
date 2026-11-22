@@ -25,6 +25,8 @@ import {
   handleStripeWebhook,
 } from "./controllers/stripeWebhook.controller.js";
 
+import analyticsRoutes from "./routes/analytics.routes.js";
+
 const app = express();
 
 const PORT = process.env.PORT || 5000;
@@ -106,6 +108,7 @@ const startServer = async () => {
 
     // Customer Stripe Checkout API routes
     app.use("/api/payments", paymentRoutes);
+    app.use("/api/analytics", analyticsRoutes);
 
     // Protected test route
     app.get("/api/protected", verifyToken, (req, res) => {
