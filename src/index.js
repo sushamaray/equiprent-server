@@ -21,6 +21,7 @@ import bookingRoutes from "./routes/booking.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
 import analyticsRoutes from "./routes/analytics.routes.js";
 import profileRoutes from "./routes/profile.routes.js";
+import adminManagementRoutes from "./routes/adminManagement.routes.js";
 
 import {
   reconcileStripeReservations,
@@ -33,24 +34,52 @@ import {
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// CORS must be registered BEFORE all API routes.
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  process.env.CLIENT_URL?.trim().replace(/\/$/, ""),
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error("Origin not allowed by CORS")
+      );
+    },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+    ],
   }),
 );
 
-app.get("/", (req, res) =>
-  res.json({ message: "EquipRent API is running" }),
-);
+app.get("/", (req, res) => {
+  return res.json({
+    message: "EquipRent API is running",
+  });
+});
 
-app.get("/api/health", (req, res) =>
-  res.status(200).json({
+app.get("/api/health", (req, res) => {
+  return res.status(200).json({
     success: true,
     message: "Server is healthy",
-  }),
-);
+  });
+});
 
 const startServer = async () => {
   try {
@@ -59,6 +88,7 @@ const startServer = async () => {
     const auth = createAuth();
     const authHandler = toNodeHandler(auth);
 
+    // Better Auth endpoints
     app.all("/api/auth/*splat", async (req, res, next) => {
       try {
         await authHandler(req, res, next);
@@ -69,76 +99,97 @@ const startServer = async () => {
         );
 
         if (!res.headersSent) {
-          res.status(500).json({
+          return res.status(500).json({
             success: false,
-            message: "Authentication service is temporarily unavailable",
+            message:
+              "Authentication service is temporarily unavailable",
           });
-        } else {
-          res.destroy(error);
         }
+
+        res.destroy(error);
       }
     });
 
-    // Stripe requires the unmodified request body.
+    // Stripe webhook requires the raw request body.
+    // Keep this route BEFORE express.json().
     app.post(
       "/api/stripe/webhook",
-      express.raw({ type: "application/json" }),
+      express.raw({
+        type: "application/json",
+      }),
       handleStripeWebhook,
     );
 
     app.use(express.json());
 
+    // Equipment and Favorites
     app.use("/api/equipment", equipmentRoutes);
+
+    // Bookings and Payments
     app.use("/api/bookings", bookingRoutes);
     app.use("/api/payments", paymentRoutes);
+
+    // Analytics
     app.use("/api/analytics", analyticsRoutes);
+
+    // Shared Customer / Owner / Admin Profile
     app.use("/api/profile", profileRoutes);
 
-    app.get("/api/protected", verifyToken, (req, res) =>
-      res.status(200).json({
+    // Admin Management
+    app.use("/api/admin", adminManagementRoutes);
+
+    // General protected route
+    app.get("/api/protected", verifyToken, (req, res) => {
+      return res.status(200).json({
         success: true,
         message: "You have accessed a protected route",
         userId: req.auth.userId,
-      }),
-    );
+      });
+    });
 
+    // Customer test
     app.get(
       "/api/customer/test",
       verifyToken,
       verifyCustomer,
-      (req, res) =>
-        res.status(200).json({
+      (req, res) => {
+        return res.status(200).json({
           success: true,
           message: "Customer access granted",
           userId: req.auth.userId,
           role: req.auth.role,
-        }),
+        });
+      },
     );
 
+    // Owner test
     app.get(
       "/api/owner/test",
       verifyToken,
       verifyOwner,
-      (req, res) =>
-        res.status(200).json({
+      (req, res) => {
+        return res.status(200).json({
           success: true,
           message: "Owner access granted",
           userId: req.auth.userId,
           role: req.auth.role,
-        }),
+        });
+      },
     );
 
+    // Admin test
     app.get(
       "/api/admin/test",
       verifyToken,
       verifyAdmin,
-      (req, res) =>
-        res.status(200).json({
+      (req, res) => {
+        return res.status(200).json({
           success: true,
           message: "Admin access granted",
           userId: req.auth.userId,
           role: req.auth.role,
-        }),
+        });
+      },
     );
 
     app.listen(PORT, () => {
@@ -153,25 +204,30 @@ const startServer = async () => {
       console.log("Payment Checkout API routes initialized");
       console.log("Analytics API routes initialized");
       console.log("Profile API routes initialized");
+      console.log("Admin Management API routes initialized");
       console.log("Protected API routes initialized");
 
       if (
         process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_")
       ) {
         const reconciliationTimer = setInterval(() => {
-          reconcileStripeReservations().catch((error) =>
+          reconcileStripeReservations().catch((error) => {
             console.error(
               "Stripe reconciliation job failed:",
               error.message,
-            ),
-          );
+            );
+          });
         }, 60 * 1000);
 
         reconciliationTimer.unref();
       }
     });
   } catch (error) {
-    console.error("Failed to start server:", error.message);
+    console.error(
+      "Failed to start server:",
+      error.message,
+    );
+
     process.exit(1);
   }
 };
