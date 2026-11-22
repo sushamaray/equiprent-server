@@ -31,69 +31,77 @@ import {
   getPendingEquipment,
 } from "../controllers/adminEquipment.controller.js";
 
+import favoriteRoutes from "./favorite.routes.js";
+
 const router = Router();
 
+// Public equipment catalog
 router.get("/", getAllEquipment);
 
-router.get(
-  "/my",
-  verifyToken,
-  verifyOwner,
-  getMyEquipment
-);
+// Customer favorites
+router.use("/favorites", favoriteRoutes);
 
-// Admin: View pending equipment
+// Owner equipment
+router.get("/my", verifyToken, verifyOwner, getMyEquipment);
+
+// Admin pending equipment
 router.get(
   "/admin/pending",
   verifyToken,
   verifyAdmin,
-  getPendingEquipment
+  getPendingEquipment,
 );
 
-// Owner: Upload equipment image
+// Owner image upload
 router.post(
   "/upload-image",
   verifyToken,
   verifyOwner,
   receiveEquipmentImage,
-  uploadEquipmentImage
+  uploadEquipmentImage,
 );
 
+// Public details
 router.get("/:id", getEquipmentById);
 
+// Owner creates equipment
 router.post(
   "/",
   verifyToken,
   verifyOwner,
-  createEquipment
+  createEquipment,
 );
 
+// Owner updates equipment
 router.patch(
   "/:id",
   verifyToken,
   verifyOwner,
-  updateEquipment
+  updateEquipment,
 );
 
+// Owner soft-deletes equipment
 router.delete(
   "/:id",
   verifyToken,
   verifyOwner,
-  deleteEquipment
+  deleteEquipment,
 );
 
+// Admin approves equipment
 router.patch(
   "/:id/approve",
   verifyToken,
   verifyAdmin,
-  approveEquipment
+  approveEquipment,
 );
 
+// Admin rejects equipment
 router.patch(
   "/:id/reject",
   verifyToken,
   verifyAdmin,
-  rejectEquipment
+  rejectEquipment,
 );
 
 export default router;
