@@ -27,12 +27,14 @@ import {
   uploadEquipmentImage,
 } from "../controllers/equipmentImage.controller.js";
 
+import {
+  getPendingEquipment,
+} from "../controllers/adminEquipment.controller.js";
+
 const router = Router();
 
-// Public: View approved and available equipment
 router.get("/", getAllEquipment);
 
-// Protected: Owners can view their own equipment
 router.get(
   "/my",
   verifyToken,
@@ -40,7 +42,15 @@ router.get(
   getMyEquipment
 );
 
-// Protected: Owners can upload equipment images
+// Admin: View pending equipment
+router.get(
+  "/admin/pending",
+  verifyToken,
+  verifyAdmin,
+  getPendingEquipment
+);
+
+// Owner: Upload equipment image
 router.post(
   "/upload-image",
   verifyToken,
@@ -49,10 +59,8 @@ router.post(
   uploadEquipmentImage
 );
 
-// Public: View approved equipment details
 router.get("/:id", getEquipmentById);
 
-// Protected: Only Owners can create equipment
 router.post(
   "/",
   verifyToken,
@@ -60,7 +68,6 @@ router.post(
   createEquipment
 );
 
-// Protected: Only the actual Owner can update equipment
 router.patch(
   "/:id",
   verifyToken,
@@ -68,7 +75,6 @@ router.patch(
   updateEquipment
 );
 
-// Protected: Only the actual Owner can soft-delete equipment
 router.delete(
   "/:id",
   verifyToken,
@@ -76,7 +82,6 @@ router.delete(
   deleteEquipment
 );
 
-// Protected: Only Admins can approve equipment
 router.patch(
   "/:id/approve",
   verifyToken,
@@ -84,7 +89,6 @@ router.patch(
   approveEquipment
 );
 
-// Protected: Only Admins can reject equipment
 router.patch(
   "/:id/reject",
   verifyToken,
