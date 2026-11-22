@@ -15,6 +15,7 @@ const publicEquipmentProjection = {
   description: 1,
   category: 1,
   pricePerDay: 1,
+  rentalPrice: 1,
   rentalType: 1,
   availableQuantity: 1,
   brand: 1,
@@ -24,7 +25,137 @@ const publicEquipmentProjection = {
   location: 1,
   image: 1,
   availability: 1,
+  ownerId: 1,
   createdAt: 1,
+};
+
+const isValidPrice = (value) => {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value > 0 &&
+    Number.isSafeInteger(Math.round(value * 100)) &&
+    Math.round(value * 100) > 0
+  );
+};
+
+const hasOwn = (object, field) => {
+  return Object.prototype.hasOwnProperty.call(
+    object,
+    field
+  );
+};
+
+// Validate the final rental pricing structure
+// before applying an equipment update.
+const preparePricingUpdate = (
+  existingEquipment,
+  updateData
+) => {
+  const currentRentalType =
+    existingEquipment.rentalType ?? "daily";
+
+  const nextRentalType =
+    updateData.rentalType ?? currentRentalType;
+
+  const rentalTypeChanged =
+    nextRentalType !== currentRentalType;
+
+  const hasNewRentalPrice = hasOwn(
+    updateData,
+    "rentalPrice"
+  );
+
+  const hasNewLegacyPrice = hasOwn(
+    updateData,
+    "pricePerDay"
+  );
+
+  // Prevent ambiguous price updates
+  if (hasNewRentalPrice && hasNewLegacyPrice) {
+    return {
+      valid: false,
+      message:
+        "Update rentalPrice or pricePerDay, not both",
+    };
+  }
+
+  // A rental period change requires an explicit
+  // new rentalPrice for that period.
+  if (
+    rentalTypeChanged &&
+    !hasNewRentalPrice
+  ) {
+    return {
+      valid: false,
+      message:
+        "Changing rentalType requires a new rentalPrice",
+    };
+  }
+
+  // Legacy pricePerDay may only describe
+  // daily rental equipment.
+  if (
+    hasNewLegacyPrice &&
+    nextRentalType !== "daily"
+  ) {
+    return {
+      valid: false,
+      message:
+        "pricePerDay can only be used for daily rentals",
+    };
+  }
+
+  const unsetFields = {};
+
+  if (hasNewRentalPrice) {
+    // New pricing replaces the legacy daily field.
+    unsetFields.pricePerDay = "";
+  }
+
+  if (hasNewLegacyPrice) {
+    // Keep only one effective price field.
+    unsetFields.rentalPrice = "";
+  }
+
+  const finalRentalPrice = hasNewRentalPrice
+    ? updateData.rentalPrice
+    : hasNewLegacyPrice
+      ? undefined
+      : existingEquipment.rentalPrice;
+
+  const finalLegacyPrice = hasNewLegacyPrice
+    ? updateData.pricePerDay
+    : hasNewRentalPrice
+      ? undefined
+      : existingEquipment.pricePerDay;
+
+  if (
+    finalRentalPrice !== undefined &&
+    isValidPrice(finalRentalPrice)
+  ) {
+    return {
+      valid: true,
+      unsetFields,
+    };
+  }
+
+  if (
+    nextRentalType === "daily" &&
+    finalRentalPrice === undefined &&
+    isValidPrice(finalLegacyPrice)
+  ) {
+    return {
+      valid: true,
+      unsetFields,
+    };
+  }
+
+  return {
+    valid: false,
+    message:
+      "A valid rentalPrice is required for weekly or monthly rentals",
+  };
 };
 
 // Create equipment - Owner only
@@ -45,7 +176,8 @@ export const createEquipment = async (req, res) => {
     ) {
       return res.status(403).json({
         success: false,
-        message: "Only authenticated Owners can add equipment",
+        message:
+          "Only authenticated Owners can add equipment",
       });
     }
 
@@ -154,7 +286,10 @@ export const getEquipmentById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!ObjectId.isValid(id)) {
+    if (
+      typeof id !== "string" ||
+      !/^[a-fA-F0-9]{24}$/.test(id)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid equipment ID",
@@ -206,7 +341,10 @@ export const updateEquipment = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!ObjectId.isValid(id)) {
+    if (
+      typeof id !== "string" ||
+      !/^[a-fA-F0-9]{24}$/.test(id)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid equipment ID",
@@ -242,23 +380,65 @@ export const updateEquipment = async (req, res) => {
       deletedAt: { $exists: false },
     };
 
+    const existingEquipment = await db
+      .collection("equipment")
+      .findOne(filter);
+
+    if (!existingEquipment) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Equipment not found or access denied",
+      });
+    }
+
     const updateData = buildEquipmentUpdate(
       req.body
     );
 
+    const pricingValidation =
+      preparePricingUpdate(
+        existingEquipment,
+        updateData
+      );
+
+    if (!pricingValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: pricingValidation.message,
+      });
+    }
+
+    const updateOperations = {
+      $set: updateData,
+    };
+
+    if (
+      Object.keys(
+        pricingValidation.unsetFields
+      ).length > 0
+    ) {
+      updateOperations.$unset =
+        pricingValidation.unsetFields;
+    }
+
+    // Prevent applying a pricing update if
+    // the equipment changed after it was read.
     const result = await db
       .collection("equipment")
       .updateOne(
-        filter,
         {
-          $set: updateData,
-        }
+          ...filter,
+          updatedAt: existingEquipment.updatedAt,
+        },
+        updateOperations
       );
 
     if (result.matchedCount === 0) {
-      return res.status(404).json({
+      return res.status(409).json({
         success: false,
-        message: "Equipment not found or access denied",
+        message:
+          "Equipment changed while updating. Please try again.",
       });
     }
 
@@ -284,7 +464,10 @@ export const deleteEquipment = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!ObjectId.isValid(id)) {
+    if (
+      typeof id !== "string" ||
+      !/^[a-fA-F0-9]{24}$/.test(id)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid equipment ID",
@@ -327,7 +510,8 @@ export const deleteEquipment = async (req, res) => {
     if (result.matchedCount === 0) {
       return res.status(404).json({
         success: false,
-        message: "Equipment not found or access denied",
+        message:
+          "Equipment not found or access denied",
       });
     }
 
@@ -348,7 +532,7 @@ export const deleteEquipment = async (req, res) => {
   }
 };
 
-// List equipment belonging to the logged-in Owner
+// List equipment belonging to logged-in Owner
 export const getMyEquipment = async (req, res) => {
   try {
     if (
@@ -357,7 +541,8 @@ export const getMyEquipment = async (req, res) => {
     ) {
       return res.status(403).json({
         success: false,
-        message: "Only Owners can view their equipment",
+        message:
+          "Only Owners can view their equipment",
       });
     }
 
@@ -417,7 +602,8 @@ export const getMyEquipment = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to retrieve Owner equipment",
+      message:
+        "Failed to retrieve Owner equipment",
     });
   }
 };
@@ -428,7 +614,10 @@ const changeEquipmentApprovalStatus = (status) => {
     try {
       const { id } = req.params;
 
-      if (!ObjectId.isValid(id)) {
+      if (
+        typeof id !== "string" ||
+        !/^[a-fA-F0-9]{24}$/.test(id)
+      ) {
         return res.status(400).json({
           success: false,
           message: "Invalid equipment ID",
@@ -441,12 +630,12 @@ const changeEquipmentApprovalStatus = (status) => {
       ) {
         return res.status(403).json({
           success: false,
-          message: "Only Admins can review equipment",
+          message:
+            "Only Admins can review equipment",
         });
       }
 
       const db = getDB();
-
       const now = new Date();
 
       const result = await db
@@ -479,7 +668,8 @@ const changeEquipmentApprovalStatus = (status) => {
 
       return res.status(200).json({
         success: true,
-        message: `Equipment ${status} successfully`,
+        message:
+          `Equipment ${status} successfully`,
         status,
       });
     } catch (error) {

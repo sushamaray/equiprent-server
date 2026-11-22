@@ -19,6 +19,14 @@ import {
   rejectEquipment,
 } from "../controllers/equipment.controller.js";
 
+import {
+  receiveEquipmentImage,
+} from "../middleware/equipmentImageUpload.js";
+
+import {
+  uploadEquipmentImage,
+} from "../controllers/equipmentImage.controller.js";
+
 const router = Router();
 
 // Public: View approved and available equipment
@@ -30,6 +38,15 @@ router.get(
   verifyToken,
   verifyOwner,
   getMyEquipment
+);
+
+// Protected: Owners can upload equipment images
+router.post(
+  "/upload-image",
+  verifyToken,
+  verifyOwner,
+  receiveEquipmentImage,
+  uploadEquipmentImage
 );
 
 // Public: View approved equipment details

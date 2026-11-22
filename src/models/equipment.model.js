@@ -69,6 +69,77 @@ const isNonEmptyText = (value) => {
   );
 };
 
+const isValidPrice = (value) => {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value > 0 &&
+    Number.isSafeInteger(Math.round(value * 100)) &&
+    Math.round(value * 100) > 0
+  );
+};
+
+// Determine which submitted price field is valid.
+// New equipment should use rentalPrice.
+// Legacy daily equipment may still use pricePerDay.
+const validatePriceFields = (data) => {
+  const rentalType = data.rentalType ?? "daily";
+
+  const hasRentalPrice =
+    Object.prototype.hasOwnProperty.call(
+      data,
+      "rentalPrice"
+    );
+
+  const hasLegacyPrice =
+    Object.prototype.hasOwnProperty.call(
+      data,
+      "pricePerDay"
+    );
+
+  if (hasRentalPrice && !isValidPrice(data.rentalPrice)) {
+    return {
+      valid: false,
+      message: "rentalPrice must be a positive number",
+    };
+  }
+
+  if (hasLegacyPrice && !isValidPrice(data.pricePerDay)) {
+    return {
+      valid: false,
+      message: "pricePerDay must be a positive number",
+    };
+  }
+
+  if (hasRentalPrice && hasLegacyPrice) {
+    return {
+      valid: false,
+      message:
+        "Provide rentalPrice or pricePerDay, not both",
+    };
+  }
+
+  if (hasRentalPrice) {
+    return {
+      valid: true,
+      message: "Rental price is valid",
+    };
+  }
+
+  if (hasLegacyPrice && rentalType === "daily") {
+    return {
+      valid: true,
+      message: "Legacy daily price is valid",
+    };
+  }
+
+  return {
+    valid: false,
+    message:
+      "rentalPrice is required for new weekly or monthly rentals",
+  };
+};
+
 // Validate new equipment
 export const validateEquipment = (data) => {
   if (
@@ -103,17 +174,6 @@ export const validateEquipment = (data) => {
     }
   }
 
-  if (
-    typeof data.pricePerDay !== "number" ||
-    !Number.isFinite(data.pricePerDay) ||
-    data.pricePerDay <= 0
-  ) {
-    return {
-      valid: false,
-      message: "pricePerDay must be a positive number",
-    };
-  }
-
   if (!isValidImageURL(data.image)) {
     return {
       valid: false,
@@ -141,13 +201,20 @@ export const validateEquipment = (data) => {
     };
   }
 
+  const priceValidation = validatePriceFields(data);
+
+  if (!priceValidation.valid) {
+    return priceValidation;
+  }
+
   if (
     data.availableQuantity !== undefined &&
     !isValidQuantity(data.availableQuantity)
   ) {
     return {
       valid: false,
-      message: "availableQuantity must be a non-negative integer",
+      message:
+        "availableQuantity must be a non-negative integer",
     };
   }
 
@@ -157,7 +224,8 @@ export const validateEquipment = (data) => {
   ) {
     return {
       valid: false,
-      message: "condition must be new, excellent, good, or fair",
+      message:
+        "condition must be new, excellent, good, or fair",
     };
   }
 
@@ -174,13 +242,15 @@ export const buildEquipmentDocument = (
 ) => {
   const now = new Date();
 
-  return {
+  const rentalType = data.rentalType ?? "daily";
+
+  const equipment = {
     name: data.name.trim(),
     description: data.description.trim(),
     category: data.category.trim(),
 
-    pricePerDay: data.pricePerDay,
-    rentalType: data.rentalType ?? "daily",
+    rentalType,
+
     availableQuantity:
       data.availableQuantity ?? 1,
 
@@ -200,6 +270,15 @@ export const buildEquipmentDocument = (
     createdAt: now,
     updatedAt: now,
   };
+
+  if (data.rentalPrice !== undefined) {
+    equipment.rentalPrice = data.rentalPrice;
+  } else {
+    // Preserve compatibility with existing daily tests.
+    equipment.pricePerDay = data.pricePerDay;
+  }
+
+  return equipment;
 };
 
 // Fields that equipment owners can update
@@ -207,6 +286,7 @@ const editableEquipmentFields = [
   "name",
   "description",
   "category",
+  "rentalPrice",
   "pricePerDay",
   "rentalType",
   "availableQuantity",
@@ -220,9 +300,7 @@ const editableEquipmentFields = [
 ];
 
 // Validate equipment updates
-export const validateEquipmentUpdate = (
-  data
-) => {
+export const validateEquipmentUpdate = (data) => {
   if (
     !data ||
     typeof data !== "object" ||
@@ -244,11 +322,7 @@ export const validateEquipmentUpdate = (
   }
 
   for (const field of fields) {
-    if (
-      !editableEquipmentFields.includes(
-        field
-      )
-    ) {
+    if (!editableEquipmentFields.includes(field)) {
       return {
         valid: false,
         message: `Field ${field} cannot be updated`,
@@ -263,7 +337,8 @@ export const validateEquipmentUpdate = (
     ) {
       return {
         valid: false,
-        message: `${field} must be a non-empty string`,
+        message:
+          `${field} must be a non-empty string`,
       };
     }
   }
@@ -275,22 +350,42 @@ export const validateEquipmentUpdate = (
     ) {
       return {
         valid: false,
-        message: `${field} must be a non-empty string`,
+        message:
+          `${field} must be a non-empty string`,
       };
     }
   }
 
   if (
-    "pricePerDay" in data &&
-    (
-      typeof data.pricePerDay !== "number" ||
-      !Number.isFinite(data.pricePerDay) ||
-      data.pricePerDay <= 0
-    )
+    "rentalPrice" in data &&
+    !isValidPrice(data.rentalPrice)
   ) {
     return {
       valid: false,
-      message: "pricePerDay must be a positive number",
+      message:
+        "rentalPrice must be a positive number",
+    };
+  }
+
+  if (
+    "pricePerDay" in data &&
+    !isValidPrice(data.pricePerDay)
+  ) {
+    return {
+      valid: false,
+      message:
+        "pricePerDay must be a positive number",
+    };
+  }
+
+  if (
+    "rentalPrice" in data &&
+    "pricePerDay" in data
+  ) {
+    return {
+      valid: false,
+      message:
+        "Update rentalPrice or pricePerDay, not both",
     };
   }
 
@@ -310,7 +405,8 @@ export const validateEquipmentUpdate = (
   ) {
     return {
       valid: false,
-      message: "availability must be a boolean",
+      message:
+        "availability must be a boolean",
     };
   }
 
@@ -320,7 +416,25 @@ export const validateEquipmentUpdate = (
   ) {
     return {
       valid: false,
-      message: "rentalType must be daily, weekly, or monthly",
+      message:
+        "rentalType must be daily, weekly, or monthly",
+    };
+  }
+
+  // The current equipment rental type must also be
+  // checked in the controller before applying updates.
+  // This prevents invalid combinations such as a
+  // weekly rental with only a legacy daily price.
+
+  if (
+    "rentalType" in data &&
+    data.rentalType !== "daily" &&
+    "pricePerDay" in data
+  ) {
+    return {
+      valid: false,
+      message:
+        "Weekly and monthly rentals require rentalPrice",
     };
   }
 
@@ -330,7 +444,8 @@ export const validateEquipmentUpdate = (
   ) {
     return {
       valid: false,
-      message: "availableQuantity must be a non-negative integer",
+      message:
+        "availableQuantity must be a non-negative integer",
     };
   }
 
@@ -340,7 +455,8 @@ export const validateEquipmentUpdate = (
   ) {
     return {
       valid: false,
-      message: "condition must be new, excellent, good, or fair",
+      message:
+        "condition must be new, excellent, good, or fair",
     };
   }
 
@@ -351,9 +467,7 @@ export const validateEquipmentUpdate = (
 };
 
 // Build safe MongoDB update object
-export const buildEquipmentUpdate = (
-  data
-) => {
+export const buildEquipmentUpdate = (data) => {
   const update = {};
 
   for (const field of editableEquipmentFields) {
