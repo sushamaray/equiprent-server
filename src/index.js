@@ -18,6 +18,12 @@ import {
 
 import equipmentRoutes from "./routes/equipment.routes.js";
 import bookingRoutes from "./routes/booking.routes.js";
+import paymentRoutes from "./routes/payment.routes.js";
+import { reconcileStripeReservations } from "./services/stripeReconciliation.service.js";
+
+import {
+  handleStripeWebhook,
+} from "./controllers/stripeWebhook.controller.js";
 
 const app = express();
 
@@ -57,9 +63,39 @@ const startServer = async () => {
     const auth = createAuth();
 
     // Better Auth routes must come before express.json()
-    app.all("/api/auth/*splat", toNodeHandler(auth));
+    const authHandler = toNodeHandler(auth);
+    app.all("/api/auth/*splat", async (req, res, next) => {
+      try {
+        await authHandler(req, res, next);
+      } catch (error) {
+        console.error("Better Auth request handler failed:", error.message);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: "Authentication service is temporarily unavailable",
+          });
+        } else {
+          res.destroy(error);
+        }
+      }
+    });
+
+    // IMPORTANT:
+    // Stripe webhooks require the original raw body.
+    // Register this route BEFORE express.json().
+    //
+    // Stripe signature verification happens inside
+    // handleStripeWebhook.
+    app.post(
+      "/api/stripe/webhook",
+      express.raw({
+        type: "application/json",
+      }),
+      handleStripeWebhook,
+    );
 
     // Parse JSON requests after Better Auth
+    // and the Stripe webhook route.
     app.use(express.json());
 
     // Equipment API routes
@@ -67,6 +103,9 @@ const startServer = async () => {
 
     // Booking API routes
     app.use("/api/bookings", bookingRoutes);
+
+    // Customer Stripe Checkout API routes
+    app.use("/api/payments", paymentRoutes);
 
     // Protected test route
     app.get("/api/protected", verifyToken, (req, res) => {
@@ -127,16 +166,29 @@ const startServer = async () => {
       console.log(
         `EquipRent server running on http://localhost:${PORT}`,
       );
+
       console.log("Better Auth routes initialized");
+      console.log("Stripe Webhook route initialized");
       console.log("Equipment API routes initialized");
       console.log("Booking API routes initialized");
+      console.log("Payment Checkout API routes initialized");
       console.log("Protected API routes initialized");
+
+      if (process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_")) {
+        const reconciliationTimer = setInterval(() => {
+          reconcileStripeReservations().catch((error) => {
+            console.error("Stripe reconciliation job failed:", error.message);
+          });
+        }, 60 * 1000);
+        reconciliationTimer.unref();
+      }
     });
   } catch (error) {
     console.error(
       "Failed to start server:",
       error.message,
     );
+
     process.exit(1);
   }
 };
