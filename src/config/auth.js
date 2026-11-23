@@ -27,6 +27,17 @@ export const createAuth = () => {
       process.env.CLIENT_URL,
     ].filter(Boolean),
 
+    // Allow secure cookies across Vercel and Render domains.
+    // Keep CSRF and origin verification enabled.
+    advanced: {
+      defaultCookieAttributes: {
+        sameSite: "none",
+        secure: true,
+        httpOnly: true,
+        path: "/",
+      },
+    },
+
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 8,
