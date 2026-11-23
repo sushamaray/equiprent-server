@@ -6,6 +6,12 @@ const validId = (value) =>
   typeof value === "string" &&
   /^[a-fA-F0-9]{24}$/.test(value);
 
+const ASSIGNABLE_ROLES = [
+  "customer",
+  "owner",
+  "admin",
+];
+
 function pagination(req) {
   const page = Number(req.query.page || 1);
   const limit = Number(req.query.limit || 10);
@@ -20,7 +26,11 @@ function pagination(req) {
     return null;
   }
 
-  return { page, limit, skip: (page - 1) * limit };
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+  };
 }
 
 function deny(res) {
@@ -39,17 +49,20 @@ function badRequest(res, message) {
 
 export async function getAllUsers(req, res) {
   try {
-    if (req.auth?.role !== "admin") return deny(res);
+    if (req.auth?.role !== "admin") {
+      return deny(res);
+    }
 
     const options = pagination(req);
 
     if (!options) {
-      return badRequest(res, "Invalid pagination");
+      return badRequest(
+        res,
+        "Invalid pagination",
+      );
     }
 
-    const db = getDB();
-    const users = db.collection("user");
-
+    const users = getDB().collection("user");
     const total = await users.countDocuments();
 
     const data = await users
@@ -73,11 +86,16 @@ export async function getAllUsers(req, res) {
         page: options.page,
         limit: options.limit,
         total,
-        totalPages: Math.ceil(total / options.limit),
+        totalPages: Math.ceil(
+          total / options.limit,
+        ),
       },
     });
   } catch (error) {
-    console.error("Admin users error:", error.message);
+    console.error(
+      "Admin users error:",
+      error.message,
+    );
 
     return res.status(500).json({
       success: false,
@@ -88,32 +106,46 @@ export async function getAllUsers(req, res) {
 
 export async function changeUserRole(req, res) {
   try {
-    if (req.auth?.role !== "admin") return deny(res);
+    if (req.auth?.role !== "admin") {
+      return deny(res);
+    }
 
     if (!validId(req.params.id)) {
-      return badRequest(res, "Invalid user ID");
+      return badRequest(
+        res,
+        "Invalid user ID",
+      );
     }
 
     const { role } = req.body || {};
 
-    // Admin promotion is intentionally excluded for safety.
-    if (!["customer", "owner"].includes(role)) {
+    if (!ASSIGNABLE_ROLES.includes(role)) {
       return badRequest(
         res,
-        "Only customer and owner roles can be assigned",
+        "Role must be customer, owner, or admin",
       );
     }
 
-    const targetId = new ObjectId(req.params.id);
+    const targetId = new ObjectId(
+      req.params.id,
+    );
 
-    if (String(targetId) === req.auth.userId) {
+    // Prevent changing the current Admin's own role.
+    if (
+      String(targetId) ===
+      String(req.auth.userId)
+    ) {
       return res.status(403).json({
         success: false,
-        message: "You cannot change your own role",
+        message:
+          "You cannot change your own role",
       });
     }
 
-    const collection = getDB().collection("user");
+    const collection = getDB().collection(
+      "user",
+    );
+
     const target = await collection.findOne({
       _id: targetId,
     });
@@ -125,13 +157,17 @@ export async function changeUserRole(req, res) {
       });
     }
 
+    // Existing Admin accounts remain protected.
     if (target.role === "admin") {
       return res.status(403).json({
         success: false,
-        message: "Admin accounts cannot be changed here",
+        message:
+          "Existing Admin accounts cannot be changed here",
       });
     }
 
+    // A non-admin user can be promoted to Admin
+    // only through this authenticated Admin endpoint.
     const result = await collection.updateOne(
       {
         _id: targetId,
@@ -148,16 +184,21 @@ export async function changeUserRole(req, res) {
     if (!result.matchedCount) {
       return res.status(409).json({
         success: false,
-        message: "User role changed; refresh and retry",
+        message:
+          "User role changed; refresh and retry",
       });
     }
 
     return res.json({
       success: true,
-      message: `User role updated to ${role}`,
+      message:
+        `User role updated to ${role}`,
     });
   } catch (error) {
-    console.error("Change role error:", error.message);
+    console.error(
+      "Change role error:",
+      error.message,
+    );
 
     return res.status(500).json({
       success: false,
@@ -166,23 +207,36 @@ export async function changeUserRole(req, res) {
   }
 }
 
-export async function getAllAdminEquipment(req, res) {
+export async function getAllAdminEquipment(
+  req,
+  res,
+) {
   try {
-    if (req.auth?.role !== "admin") return deny(res);
+    if (req.auth?.role !== "admin") {
+      return deny(res);
+    }
 
     const options = pagination(req);
 
     if (!options) {
-      return badRequest(res, "Invalid pagination");
+      return badRequest(
+        res,
+        "Invalid pagination",
+      );
     }
 
-    const collection = getDB().collection("equipment");
+    const collection = getDB().collection(
+      "equipment",
+    );
 
     const filter = {
       deletedAt: { $exists: false },
     };
 
-    const total = await collection.countDocuments(filter);
+    const total =
+      await collection.countDocuments(
+        filter,
+      );
 
     const data = await collection
       .find(filter)
@@ -205,7 +259,10 @@ export async function getAllAdminEquipment(req, res) {
         ownerId: 1,
         createdAt: 1,
       })
-      .sort({ createdAt: -1, _id: -1 })
+      .sort({
+        createdAt: -1,
+        _id: -1,
+      })
       .skip(options.skip)
       .limit(options.limit)
       .toArray();
@@ -217,27 +274,41 @@ export async function getAllAdminEquipment(req, res) {
         page: options.page,
         limit: options.limit,
         total,
-        totalPages: Math.ceil(total / options.limit),
+        totalPages: Math.ceil(
+          total / options.limit,
+        ),
       },
     });
   } catch (error) {
-    console.error("Admin equipment error:", error.message);
+    console.error(
+      "Admin equipment error:",
+      error.message,
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to load equipment",
+      message:
+        "Failed to load equipment",
     });
   }
 }
 
-// Admin can edit listing information without changing its owner,
-// approval status, or existing rental/payment records.
-export async function adminUpdateEquipment(req, res) {
+// Admin can edit listing information without changing
+// its owner, approval status, bookings, or payments.
+export async function adminUpdateEquipment(
+  req,
+  res,
+) {
   try {
-    if (req.auth?.role !== "admin") return deny(res);
+    if (req.auth?.role !== "admin") {
+      return deny(res);
+    }
 
     if (!validId(req.params.id)) {
-      return badRequest(res, "Invalid equipment ID");
+      return badRequest(
+        res,
+        "Invalid equipment ID",
+      );
     }
 
     const body = req.body;
@@ -247,7 +318,10 @@ export async function adminUpdateEquipment(req, res) {
       typeof body !== "object" ||
       Array.isArray(body)
     ) {
-      return badRequest(res, "Invalid equipment data");
+      return badRequest(
+        res,
+        "Invalid equipment data",
+      );
     }
 
     const allowedFields = [
@@ -266,12 +340,14 @@ export async function adminUpdateEquipment(req, res) {
       "image",
     ];
 
-    const receivedFields = Object.keys(body);
+    const receivedFields =
+      Object.keys(body);
 
     if (
       receivedFields.length === 0 ||
       receivedFields.some(
-        (field) => !allowedFields.includes(field),
+        (field) =>
+          !allowedFields.includes(field),
       )
     ) {
       return badRequest(
@@ -293,16 +369,25 @@ export async function adminUpdateEquipment(req, res) {
       rentalTerms: [0, 3000],
     };
 
-    for (const [field, [minLength, maxLength]] of Object.entries(
-      textRules,
-    )) {
-      if (!Object.hasOwn(body, field)) continue;
-
-      if (typeof body[field] !== "string") {
-        return badRequest(res, `Invalid ${field}`);
+    for (const [
+      field,
+      [minLength, maxLength],
+    ] of Object.entries(textRules)) {
+      if (!Object.hasOwn(body, field)) {
+        continue;
       }
 
-      const value = body[field].trim();
+      if (
+        typeof body[field] !== "string"
+      ) {
+        return badRequest(
+          res,
+          `Invalid ${field}`,
+        );
+      }
+
+      const value =
+        body[field].trim();
 
       if (
         value.length < minLength ||
@@ -317,19 +402,35 @@ export async function adminUpdateEquipment(req, res) {
       updates[field] = value;
     }
 
-    if (Object.hasOwn(body, "rentalType")) {
+    if (
+      Object.hasOwn(
+        body,
+        "rentalType",
+      )
+    ) {
       if (
-        !["daily", "weekly", "monthly"].includes(
-          body.rentalType,
-        )
+        ![
+          "daily",
+          "weekly",
+          "monthly",
+        ].includes(body.rentalType)
       ) {
-        return badRequest(res, "Invalid rental type");
+        return badRequest(
+          res,
+          "Invalid rental type",
+        );
       }
 
-      updates.rentalType = body.rentalType;
+      updates.rentalType =
+        body.rentalType;
     }
 
-    if (Object.hasOwn(body, "rentalPrice")) {
+    if (
+      Object.hasOwn(
+        body,
+        "rentalPrice",
+      )
+    ) {
       const price = body.rentalPrice;
 
       if (
@@ -347,20 +448,30 @@ export async function adminUpdateEquipment(req, res) {
 
       updates.rentalPrice = price;
 
-      // Keep legacy daily pricing consistent for daily listings.
       if (
-        (updates.rentalType || body.rentalType) === "daily"
+        (updates.rentalType ||
+          body.rentalType) ===
+        "daily"
       ) {
         updates.pricePerDay = price;
       }
     }
 
-    if (Object.hasOwn(body, "availableQuantity")) {
-      const quantity = body.availableQuantity;
+    if (
+      Object.hasOwn(
+        body,
+        "availableQuantity",
+      )
+    ) {
+      const quantity =
+        body.availableQuantity;
 
       if (
-        typeof quantity !== "number" ||
-        !Number.isSafeInteger(quantity) ||
+        typeof quantity !==
+          "number" ||
+        !Number.isSafeInteger(
+          quantity,
+        ) ||
         quantity < 0 ||
         quantity > 100000
       ) {
@@ -370,68 +481,108 @@ export async function adminUpdateEquipment(req, res) {
         );
       }
 
-      updates.availableQuantity = quantity;
+      updates.availableQuantity =
+        quantity;
     }
 
-    if (Object.hasOwn(body, "availability")) {
-      if (typeof body.availability !== "boolean") {
-        return badRequest(res, "Availability must be true or false");
+    if (
+      Object.hasOwn(
+        body,
+        "availability",
+      )
+    ) {
+      if (
+        typeof body.availability !==
+        "boolean"
+      ) {
+        return badRequest(
+          res,
+          "Availability must be true or false",
+        );
       }
 
-      updates.availability = body.availability;
+      updates.availability =
+        body.availability;
     }
 
-    if (Object.hasOwn(body, "image")) {
+    if (
+      Object.hasOwn(body, "image")
+    ) {
       if (
-        typeof body.image !== "string" ||
+        typeof body.image !==
+          "string" ||
         body.image.length > 2000
       ) {
-        return badRequest(res, "Invalid image URL");
+        return badRequest(
+          res,
+          "Invalid image URL",
+        );
       }
 
       let url;
 
       try {
-        url = new URL(body.image);
+        url = new URL(
+          body.image,
+        );
       } catch {
-        return badRequest(res, "Image must be a valid URL");
+        return badRequest(
+          res,
+          "Image must be a valid URL",
+        );
       }
 
-      if (url.protocol !== "https:") {
+      if (
+        url.protocol !== "https:"
+      ) {
         return badRequest(
           res,
           "Image URL must use HTTPS",
         );
       }
 
-      updates.image = url.toString();
+      updates.image =
+        url.toString();
     }
 
     const db = getDB();
-    const equipmentId = new ObjectId(req.params.id);
+
+    const equipmentId =
+      new ObjectId(
+        req.params.id,
+      );
 
     const existing = await db
       .collection("equipment")
       .findOne({
         _id: equipmentId,
-        deletedAt: { $exists: false },
+        deletedAt: {
+          $exists: false,
+        },
       });
 
     if (!existing) {
       return res.status(404).json({
         success: false,
-        message: "Equipment not found",
+        message:
+          "Equipment not found",
       });
     }
 
     const nextRentalType =
-      updates.rentalType || existing.rentalType || "daily";
+      updates.rentalType ||
+      existing.rentalType ||
+      "daily";
 
     if (
       nextRentalType === "daily" &&
-      Object.hasOwn(updates, "rentalPrice")
+      Object.hasOwn(
+        updates,
+        "rentalPrice",
+      )
     ) {
-      updates.pricePerDay = updates.rentalPrice;
+      updates.pricePerDay =
+        updates.rentalPrice;
     }
 
     const nextQuantity =
@@ -444,27 +595,45 @@ export async function adminUpdateEquipment(req, res) {
       existing.availability ??
       true;
 
-    if (nextAvailability && nextQuantity < 1) {
+    if (
+      nextAvailability &&
+      nextQuantity < 1
+    ) {
       return badRequest(
         res,
         "Available equipment must have at least 1 unit",
       );
     }
 
-    // Avoid changing pricing, rental type or available units
-    // during active paid reservations.
     const changesRentalTerms =
-      Object.hasOwn(updates, "rentalPrice") ||
-      Object.hasOwn(updates, "rentalType") ||
-      Object.hasOwn(updates, "availableQuantity");
+      Object.hasOwn(
+        updates,
+        "rentalPrice",
+      ) ||
+      Object.hasOwn(
+        updates,
+        "rentalType",
+      ) ||
+      Object.hasOwn(
+        updates,
+        "availableQuantity",
+      );
 
     if (changesRentalTerms) {
-      const activeReservation = await db
-        .collection("checkoutReservations")
-        .findOne({
-          equipmentId,
-          status: { $in: ["pending", "processing"] },
-        });
+      const activeReservation =
+        await db
+          .collection(
+            "checkoutReservations",
+          )
+          .findOne({
+            equipmentId,
+            status: {
+              $in: [
+                "pending",
+                "processing",
+              ],
+            },
+          });
 
       if (activeReservation) {
         return res.status(409).json({
@@ -475,28 +644,35 @@ export async function adminUpdateEquipment(req, res) {
       }
     }
 
-    updates.updatedAt = new Date();
+    updates.updatedAt =
+      new Date();
 
     const result = await db
       .collection("equipment")
       .updateOne(
         {
           _id: equipmentId,
-          deletedAt: { $exists: false },
+          deletedAt: {
+            $exists: false,
+          },
         },
-        { $set: updates },
+        {
+          $set: updates,
+        },
       );
 
     if (!result.matchedCount) {
       return res.status(404).json({
         success: false,
-        message: "Equipment not found",
+        message:
+          "Equipment not found",
       });
     }
 
     return res.json({
       success: true,
-      message: "Equipment updated successfully",
+      message:
+        "Equipment updated successfully",
     });
   } catch (error) {
     console.error(
@@ -506,27 +682,45 @@ export async function adminUpdateEquipment(req, res) {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to update equipment",
+      message:
+        "Failed to update equipment",
     });
   }
 }
 
-export async function adminDeleteEquipment(req, res) {
+export async function adminDeleteEquipment(
+  req,
+  res,
+) {
   try {
-    if (req.auth?.role !== "admin") return deny(res);
+    if (req.auth?.role !== "admin") {
+      return deny(res);
+    }
 
     if (!validId(req.params.id)) {
-      return badRequest(res, "Invalid equipment ID");
+      return badRequest(
+        res,
+        "Invalid equipment ID",
+      );
     }
 
     const db = getDB();
-    const equipmentId = new ObjectId(req.params.id);
+
+    const equipmentId =
+      new ObjectId(
+        req.params.id,
+      );
 
     const activeBooking = await db
       .collection("bookings")
       .findOne({
         equipmentId,
-        status: { $in: ["pending", "confirmed"] },
+        status: {
+          $in: [
+            "pending",
+            "confirmed",
+          ],
+        },
       });
 
     if (activeBooking) {
@@ -542,12 +736,16 @@ export async function adminDeleteEquipment(req, res) {
       .updateOne(
         {
           _id: equipmentId,
-          deletedAt: { $exists: false },
+          deletedAt: {
+            $exists: false,
+          },
         },
         {
           $set: {
-            deletedAt: new Date(),
-            updatedAt: new Date(),
+            deletedAt:
+              new Date(),
+            updatedAt:
+              new Date(),
           },
         },
       );
@@ -555,13 +753,15 @@ export async function adminDeleteEquipment(req, res) {
     if (!result.matchedCount) {
       return res.status(404).json({
         success: false,
-        message: "Equipment not found",
+        message:
+          "Equipment not found",
       });
     }
 
     return res.json({
       success: true,
-      message: "Equipment removed from marketplace",
+      message:
+        "Equipment removed from marketplace",
     });
   } catch (error) {
     console.error(
@@ -571,35 +771,56 @@ export async function adminDeleteEquipment(req, res) {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to remove equipment",
+      message:
+        "Failed to remove equipment",
     });
   }
 }
 
-export async function getAllAdminRentals(req, res) {
+export async function getAllAdminRentals(
+  req,
+  res,
+) {
   try {
-    if (req.auth?.role !== "admin") return deny(res);
+    if (req.auth?.role !== "admin") {
+      return deny(res);
+    }
 
     const options = pagination(req);
 
     if (!options) {
-      return badRequest(res, "Invalid pagination");
+      return badRequest(
+        res,
+        "Invalid pagination",
+      );
     }
 
     const db = getDB();
-    const collection = db.collection("bookings");
+    const collection =
+      db.collection("bookings");
 
-    const total = await collection.countDocuments();
+    const total =
+      await collection.countDocuments();
 
     const data = await collection
       .aggregate([
-        { $sort: { createdAt: -1, _id: -1 } },
-        { $skip: options.skip },
-        { $limit: options.limit },
+        {
+          $sort: {
+            createdAt: -1,
+            _id: -1,
+          },
+        },
+        {
+          $skip: options.skip,
+        },
+        {
+          $limit: options.limit,
+        },
         {
           $lookup: {
             from: "user",
-            localField: "customerId",
+            localField:
+              "customerId",
             foreignField: "_id",
             as: "customer",
           },
@@ -607,7 +828,8 @@ export async function getAllAdminRentals(req, res) {
         {
           $lookup: {
             from: "equipment",
-            localField: "equipmentId",
+            localField:
+              "equipmentId",
             foreignField: "_id",
             as: "equipment",
           },
@@ -624,25 +846,45 @@ export async function getAllAdminRentals(req, res) {
           $addFields: {
             customerName: {
               $ifNull: [
-                { $arrayElemAt: ["$customer.name", 0] },
+                {
+                  $arrayElemAt: [
+                    "$customer.name",
+                    0,
+                  ],
+                },
                 "Unknown customer",
               ],
             },
             customerEmail: {
               $ifNull: [
-                { $arrayElemAt: ["$customer.email", 0] },
+                {
+                  $arrayElemAt: [
+                    "$customer.email",
+                    0,
+                  ],
+                },
                 "",
               ],
             },
             equipmentName: {
               $ifNull: [
-                { $arrayElemAt: ["$equipment.name", 0] },
+                {
+                  $arrayElemAt: [
+                    "$equipment.name",
+                    0,
+                  ],
+                },
                 "Unknown equipment",
               ],
             },
             ownerName: {
               $ifNull: [
-                { $arrayElemAt: ["$owner.name", 0] },
+                {
+                  $arrayElemAt: [
+                    "$owner.name",
+                    0,
+                  ],
+                },
                 "Unknown owner",
               ],
             },
@@ -665,15 +907,21 @@ export async function getAllAdminRentals(req, res) {
         page: options.page,
         limit: options.limit,
         total,
-        totalPages: Math.ceil(total / options.limit),
+        totalPages: Math.ceil(
+          total / options.limit,
+        ),
       },
     });
   } catch (error) {
-    console.error("Admin rentals error:", error.message);
+    console.error(
+      "Admin rentals error:",
+      error.message,
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to load rentals",
+      message:
+        "Failed to load rentals",
     });
   }
 }

@@ -33,6 +33,37 @@ const publicEquipmentProjection = {
   createdAt: 1,
 };
 
+// Homepage categories can include related database categories.
+// Individual database category filters continue to work as before.
+const homepageCategoryGroups = {
+  "construction equipment": [
+    "Construction Equipment",
+    "Tools",
+  ],
+  "photography equipment": [
+    "Photography Equipment",
+    "Photography",
+    "Camera",
+  ],
+  "vehicles & transportation": [
+    "Vehicles & Transportation",
+    "Vehicles",
+    "Transportation",
+  ],
+  "agriculture equipment": [
+    "Agriculture Equipment",
+    "Agriculture",
+  ],
+  electronics: [
+    "Electronics",
+  ],
+  "event equipment": [
+    "Event Equipment",
+    "Audio",
+    "Lighting",
+  ],
+};
+
 const isValidPrice = (value) => {
   return (
     typeof value === "number" &&
@@ -49,6 +80,26 @@ const hasOwn = (object, field) => {
 
 const escapeRegex = (value) => {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+};
+
+// Returns one exact-match category or a homepage category group.
+const buildCategoryFilter = (category) => {
+  const groupedCategories =
+    homepageCategoryGroups[category.toLowerCase()];
+
+  if (!groupedCategories) {
+    return {
+      $regex: `^${escapeRegex(category)}$`,
+      $options: "i",
+    };
+  }
+
+  return {
+    $in: groupedCategories.map(
+      (item) =>
+        new RegExp(`^${escapeRegex(item)}$`, "i"),
+    ),
+  };
 };
 
 // Validate the final rental pricing structure
@@ -198,7 +249,11 @@ export const getAllEquipment = async (req, res) => {
     const availability = String(req.query.availability ?? "true").trim();
     const sort = String(req.query.sort ?? "newest").trim();
 
-    if (search.length > 100 || category.length > 80 || location.length > 100) {
+    if (
+      search.length > 100 ||
+      category.length > 80 ||
+      location.length > 100
+    ) {
       return res.status(400).json({
         success: false,
         message: "Search or filter value is too long",
@@ -222,12 +277,14 @@ export const getAllEquipment = async (req, res) => {
     }
 
     const minPrice =
-      req.query.minPrice === undefined || req.query.minPrice === ""
+      req.query.minPrice === undefined ||
+      req.query.minPrice === ""
         ? null
         : Number(req.query.minPrice);
 
     const maxPrice =
-      req.query.maxPrice === undefined || req.query.maxPrice === ""
+      req.query.maxPrice === undefined ||
+      req.query.maxPrice === ""
         ? null
         : Number(req.query.maxPrice);
 
@@ -256,12 +313,23 @@ export const getAllEquipment = async (req, res) => {
 
     const sortOptions = {
       newest: { createdAt: -1, _id: -1 },
-      "price-low": { _effectiveRentalPrice: 1, _id: 1 },
-      "price-high": { _effectiveRentalPrice: -1, _id: -1 },
+      "price-low": {
+        _effectiveRentalPrice: 1,
+        _id: 1,
+      },
+      "price-high": {
+        _effectiveRentalPrice: -1,
+        _id: -1,
+      },
       name: { name: 1, _id: 1 },
     };
 
-    if (!Object.prototype.hasOwnProperty.call(sortOptions, sort)) {
+    if (
+      !Object.prototype.hasOwnProperty.call(
+        sortOptions,
+        sort,
+      )
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid sorting option",
@@ -273,9 +341,8 @@ export const getAllEquipment = async (req, res) => {
       deletedAt: { $exists: false },
     };
 
-    // Preserve the old public API default:
-    // only available equipment is returned unless
-    // the caller explicitly requests all or unavailable.
+    // Preserve the existing public API default.
+    // Return available equipment unless requested otherwise.
     if (availability !== "all") {
       filter.availability = availability === "true";
     }
@@ -299,12 +366,11 @@ export const getAllEquipment = async (req, res) => {
       });
     }
 
+    // Support homepage category groups while preserving
+    // individual category filtering.
     if (category && category !== "all") {
       conditions.push({
-        category: {
-          $regex: `^${escapeRegex(category)}$`,
-          $options: "i",
-        },
+        category: buildCategoryFilter(category),
       });
     }
 
@@ -350,7 +416,10 @@ export const getAllEquipment = async (req, res) => {
         $expr: {
           $and: Object.entries(priceConditions).map(
             ([operator, value]) => ({
-              [operator]: [priceExpression, value],
+              [operator]: [
+                priceExpression,
+                value,
+              ],
             }),
           ),
         },
@@ -372,7 +441,10 @@ export const getAllEquipment = async (req, res) => {
         {
           $addFields: {
             _effectiveRentalPrice: {
-              $ifNull: ["$rentalPrice", "$pricePerDay"],
+              $ifNull: [
+                "$rentalPrice",
+                "$pricePerDay",
+              ],
             },
           },
         },
@@ -431,15 +503,19 @@ export const getEquipmentById = async (req, res) => {
 
     const db = getDB();
 
-    const equipment = await db.collection("equipment").findOne(
-      {
-        _id: new ObjectId(id),
-        availability: true,
-        status: "approved",
-        deletedAt: { $exists: false },
-      },
-      { projection: publicEquipmentProjection },
-    );
+    const equipment = await db
+      .collection("equipment")
+      .findOne(
+        {
+          _id: new ObjectId(id),
+          availability: true,
+          status: "approved",
+          deletedAt: { $exists: false },
+        },
+        {
+          projection: publicEquipmentProjection,
+        },
+      );
 
     if (!equipment) {
       return res.status(404).json({
@@ -453,7 +529,10 @@ export const getEquipmentById = async (req, res) => {
       equipment,
     });
   } catch (error) {
-    console.error("Equipment details failed:", error.message);
+    console.error(
+      "Equipment details failed:",
+      error.message,
+    );
 
     return res.status(500).json({
       success: false,
@@ -477,7 +556,9 @@ export const updateEquipment = async (req, res) => {
       });
     }
 
-    const validation = validateEquipmentUpdate(req.body);
+    const validation = validateEquipmentUpdate(
+      req.body,
+    );
 
     if (!validation.valid) {
       return res.status(400).json({
@@ -515,12 +596,15 @@ export const updateEquipment = async (req, res) => {
       });
     }
 
-    const updateData = buildEquipmentUpdate(req.body);
-
-    const pricingValidation = preparePricingUpdate(
-      existingEquipment,
-      updateData,
+    const updateData = buildEquipmentUpdate(
+      req.body,
     );
+
+    const pricingValidation =
+      preparePricingUpdate(
+        existingEquipment,
+        updateData,
+      );
 
     if (!pricingValidation.valid) {
       return res.status(400).json({
@@ -533,31 +617,44 @@ export const updateEquipment = async (req, res) => {
       $set: updateData,
     };
 
-    if (Object.keys(pricingValidation.unsetFields).length > 0) {
-      updateOperations.$unset = pricingValidation.unsetFields;
+    if (
+      Object.keys(
+        pricingValidation.unsetFields,
+      ).length > 0
+    ) {
+      updateOperations.$unset =
+        pricingValidation.unsetFields;
     }
 
-    const result = await db.collection("equipment").updateOne(
-      {
-        ...filter,
-        updatedAt: existingEquipment.updatedAt,
-      },
-      updateOperations,
-    );
+    const result = await db
+      .collection("equipment")
+      .updateOne(
+        {
+          ...filter,
+          updatedAt:
+            existingEquipment.updatedAt,
+        },
+        updateOperations,
+      );
 
     if (result.matchedCount === 0) {
       return res.status(409).json({
         success: false,
-        message: "Equipment changed while updating. Please try again.",
+        message:
+          "Equipment changed while updating. Please try again.",
       });
     }
 
     return res.status(200).json({
       success: true,
-      message: "Equipment updated successfully",
+      message:
+        "Equipment updated successfully",
     });
   } catch (error) {
-    console.error("Equipment update failed:", error.message);
+    console.error(
+      "Equipment update failed:",
+      error.message,
+    );
 
     return res.status(500).json({
       success: false,
@@ -601,30 +698,37 @@ export const deleteEquipment = async (req, res) => {
 
     const now = new Date();
 
-    const result = await db.collection("equipment").updateOne(
-      filter,
-      {
-        $set: {
-          availability: false,
-          deletedAt: now,
-          updatedAt: now,
+    const result = await db
+      .collection("equipment")
+      .updateOne(
+        filter,
+        {
+          $set: {
+            availability: false,
+            deletedAt: now,
+            updatedAt: now,
+          },
         },
-      },
-    );
+      );
 
     if (result.matchedCount === 0) {
       return res.status(404).json({
         success: false,
-        message: "Equipment not found or access denied",
+        message:
+          "Equipment not found or access denied",
       });
     }
 
     return res.status(200).json({
       success: true,
-      message: "Equipment deleted successfully",
+      message:
+        "Equipment deleted successfully",
     });
   } catch (error) {
-    console.error("Equipment deletion failed:", error.message);
+    console.error(
+      "Equipment deletion failed:",
+      error.message,
+    );
 
     return res.status(500).json({
       success: false,
@@ -642,12 +746,17 @@ export const getMyEquipment = async (req, res) => {
     ) {
       return res.status(403).json({
         success: false,
-        message: "Only Owners can view their equipment",
+        message:
+          "Only Owners can view their equipment",
       });
     }
 
-    const page = Number(req.query.page ?? "1");
-    const limit = Number(req.query.limit ?? "10");
+    const page = Number(
+      req.query.page ?? "1",
+    );
+    const limit = Number(
+      req.query.limit ?? "10",
+    );
 
     if (
       !Number.isInteger(page) ||
@@ -658,23 +767,31 @@ export const getMyEquipment = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid pagination parameters",
+        message:
+          "Invalid pagination parameters",
       });
     }
 
     const db = getDB();
 
     const filter = {
-      ownerId: new ObjectId(req.auth.userId),
+      ownerId: new ObjectId(
+        req.auth.userId,
+      ),
       deletedAt: { $exists: false },
     };
 
-    const total = await db.collection("equipment").countDocuments(filter);
+    const total = await db
+      .collection("equipment")
+      .countDocuments(filter);
 
     const equipment = await db
       .collection("equipment")
       .find(filter)
-      .sort({ createdAt: -1, _id: -1 })
+      .sort({
+        createdAt: -1,
+        _id: -1,
+      })
       .skip((page - 1) * limit)
       .limit(limit)
       .toArray();
@@ -686,21 +803,29 @@ export const getMyEquipment = async (req, res) => {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.ceil(
+          total / limit,
+        ),
       },
     });
   } catch (error) {
-    console.error("Owner equipment listing failed:", error.message);
+    console.error(
+      "Owner equipment listing failed:",
+      error.message,
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to retrieve Owner equipment",
+      message:
+        "Failed to retrieve Owner equipment",
     });
   }
 };
 
 // Change equipment approval status - Admin only
-const changeEquipmentApprovalStatus = (status) => {
+const changeEquipmentApprovalStatus = (
+  status,
+) => {
   return async (req, res) => {
     try {
       const { id } = req.params;
@@ -711,49 +836,62 @@ const changeEquipmentApprovalStatus = (status) => {
       ) {
         return res.status(400).json({
           success: false,
-          message: "Invalid equipment ID",
+          message:
+            "Invalid equipment ID",
         });
       }
 
       if (
         req.auth?.role !== "admin" ||
-        !ObjectId.isValid(req.auth?.userId)
+        !ObjectId.isValid(
+          req.auth?.userId,
+        )
       ) {
         return res.status(403).json({
           success: false,
-          message: "Only Admins can review equipment",
+          message:
+            "Only Admins can review equipment",
         });
       }
 
       const db = getDB();
       const now = new Date();
 
-      const result = await db.collection("equipment").updateOne(
-        {
-          _id: new ObjectId(id),
-          deletedAt: { $exists: false },
-          status: "pending",
-        },
-        {
-          $set: {
-            status,
-            reviewedAt: now,
-            reviewedBy: new ObjectId(req.auth.userId),
-            updatedAt: now,
+      const result = await db
+        .collection("equipment")
+        .updateOne(
+          {
+            _id: new ObjectId(id),
+            deletedAt: {
+              $exists: false,
+            },
+            status: "pending",
           },
-        },
-      );
+          {
+            $set: {
+              status,
+              reviewedAt: now,
+              reviewedBy:
+                new ObjectId(
+                  req.auth.userId,
+                ),
+              updatedAt: now,
+            },
+          },
+        );
 
       if (result.matchedCount === 0) {
         return res.status(404).json({
           success: false,
-          message: "Equipment not found or not eligible for review",
+          message:
+            "Equipment not found or not eligible for review",
         });
       }
 
       return res.status(200).json({
         success: true,
-        message: `Equipment ${status} successfully`,
+        message:
+          `Equipment ${status} successfully`,
         status,
       });
     } catch (error) {
@@ -764,14 +902,19 @@ const changeEquipmentApprovalStatus = (status) => {
 
       return res.status(500).json({
         success: false,
-        message: "Failed to update equipment approval status",
+        message:
+          "Failed to update equipment approval status",
       });
     }
   };
 };
 
 export const approveEquipment =
-  changeEquipmentApprovalStatus("approved");
+  changeEquipmentApprovalStatus(
+    "approved",
+  );
 
 export const rejectEquipment =
-  changeEquipmentApprovalStatus("rejected");
+  changeEquipmentApprovalStatus(
+    "rejected",
+  );

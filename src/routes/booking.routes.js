@@ -10,61 +10,67 @@ import {
 
 import {
   createBooking,
-  getMyBookings,
   getOwnerBookings,
   confirmBooking,
   rejectBooking,
   cancelBooking,
 } from "../controllers/booking.controller.js";
 
+import {
+  getCustomerBookings,
+} from "../controllers/customerBookings.controller.js";
+
 const router = Router();
 
-// Customer creates a new equipment booking
+// Direct booking creation remains disabled.
+// Customers must complete Stripe Checkout.
 router.post(
   "/",
   verifyToken,
   verifyCustomer,
-  createBooking
+  createBooking,
 );
 
 // Customer views their own bookings
+// with equipment names from MongoDB.
 router.get(
   "/my",
   verifyToken,
   verifyCustomer,
-  getMyBookings
+  getCustomerBookings,
 );
 
-// Owner views bookings for their own equipment
+// Owner views bookings for their own equipment.
 router.get(
   "/owner",
   verifyToken,
   verifyOwner,
-  getOwnerBookings
+  getOwnerBookings,
 );
 
-// Owner confirms a pending booking
+// Owner confirms a pending booking.
 router.patch(
   "/:id/confirm",
   verifyToken,
   verifyOwner,
-  confirmBooking
+  confirmBooking,
 );
 
-// Owner rejects a pending, unpaid booking
+// Owner rejects a pending, unpaid booking.
 router.patch(
   "/:id/reject",
   verifyToken,
   verifyOwner,
-  rejectBooking
+  rejectBooking,
 );
 
-// Customer cancels their own pending, unpaid booking
+// Customer cancels their own pending,
+// unpaid booking.
 router.patch(
   "/:id/cancel",
   verifyToken,
   verifyCustomer,
-  cancelBooking
+  cancelBooking,
 );
 
 export default router;

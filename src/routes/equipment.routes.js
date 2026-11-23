@@ -11,13 +11,16 @@ import {
 import {
   createEquipment,
   getAllEquipment,
-  getEquipmentById,
   getMyEquipment,
   updateEquipment,
   deleteEquipment,
   approveEquipment,
   rejectEquipment,
 } from "../controllers/equipment.controller.js";
+
+import {
+  getEquipmentDetails,
+} from "../controllers/equipmentDetails.controller.js";
 
 import {
   receiveEquipmentImage,
@@ -42,7 +45,12 @@ router.get("/", getAllEquipment);
 router.use("/favorites", favoriteRoutes);
 
 // Owner equipment
-router.get("/my", verifyToken, verifyOwner, getMyEquipment);
+router.get(
+  "/my",
+  verifyToken,
+  verifyOwner,
+  getMyEquipment,
+);
 
 // Admin pending equipment
 router.get(
@@ -61,8 +69,8 @@ router.post(
   uploadEquipmentImage,
 );
 
-// Public details
-router.get("/:id", getEquipmentById);
+// Equipment details with owner name
+router.get("/:id", getEquipmentDetails);
 
 // Owner creates equipment
 router.post(
