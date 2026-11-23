@@ -119,7 +119,6 @@ export const getMyBookings = async (req, res) => {
 };
 
 // Get bookings for authenticated Owner's equipment
-
 export const getOwnerBookings = async (req, res) => {
   try {
     if (
@@ -279,7 +278,7 @@ export const getOwnerBookings = async (req, res) => {
   }
 };
 
-// Confirm pending booking - Owner only
+// Confirm a pending AND paid booking - Owner only
 export const confirmBooking = async (req, res) => {
   if (
     req.auth?.role !== "owner" ||
@@ -312,6 +311,17 @@ export const confirmBooking = async (req, res) => {
 
     const now = new Date();
 
+    // IMPORTANT:
+    // The payment condition is part of the atomic MongoDB
+    // update filter, not a separate read-before-write check.
+    //
+    // A booking is confirmed only when:
+    // 1. It belongs to the authenticated Owner.
+    // 2. Its current status is pending.
+    // 3. Its payment status is paid.
+    //
+    // Missing, unpaid, failed, or refunded payment
+    // statuses do not satisfy this condition.
     const result = await db
       .collection("bookings")
       .updateOne(
@@ -319,6 +329,7 @@ export const confirmBooking = async (req, res) => {
           _id: bookingId,
           ownerId,
           status: "pending",
+          paymentStatus: "paid",
         },
         {
           $set: {
@@ -340,6 +351,8 @@ export const confirmBooking = async (req, res) => {
       });
     }
 
+    // Distinguish a missing booking, an invalid status,
+    // and an unpaid booking without modifying any data.
     const booking = await db
       .collection("bookings")
       .findOne(
@@ -350,6 +363,7 @@ export const confirmBooking = async (req, res) => {
         {
           projection: {
             status: 1,
+            paymentStatus: 1,
           },
         }
       );
@@ -361,10 +375,25 @@ export const confirmBooking = async (req, res) => {
       });
     }
 
+    if (booking.status !== "pending") {
+      return res.status(409).json({
+        success: false,
+        message: "Only pending bookings can be confirmed",
+      });
+    }
+
+    if (booking.paymentStatus !== "paid") {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Payment must be completed before confirming this booking",
+      });
+    }
+
     return res.status(409).json({
       success: false,
       message:
-        "Only pending bookings can be confirmed",
+        "Booking could not be confirmed. Please refresh and try again.",
     });
   } catch (error) {
     console.error(
@@ -560,7 +589,7 @@ export const cancelBooking = async (req, res) => {
           );
         }
 
-        // Coordinate with booking creation transactions
+        // Coordinate with booking creation transactions.
         const reservationLock = await db
           .collection("equipment")
           .updateOne(

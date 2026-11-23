@@ -27,8 +27,7 @@ export const createAuth = () => {
       process.env.CLIENT_URL,
     ].filter(Boolean),
 
-    // Allow secure cookies across Vercel and Render domains.
-    // Keep CSRF and origin verification enabled.
+    // Preserve working production Google OAuth cookies.
     advanced: {
       defaultCookieAttributes: {
         sameSite: "none",
@@ -40,7 +39,7 @@ export const createAuth = () => {
 
     emailAndPassword: {
       enabled: true,
-      minPasswordLength: 8,
+      minPasswordLength: 6,
     },
 
     ...(googleConfigured
